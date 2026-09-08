@@ -32,37 +32,31 @@ This module, `ge-app-telemetry`, defines a production-grade, zero-ETL streaming 
 │                     Google Cloud Logging                                 │
 │        Resource: businessaicode.googleapis.com/BAICInstance             │
 │        Streams: inference_response, client_telemetry, inference_request │
-└──────────────────┬──────────────────────────────────┬───────────────────┘
-                   │                                  │
-                   ▼ (Push Log Router Sink)           ▼ (Log-Based Metrics)
-┌───────────────────────────────────────┐  ┌──────────────────────────────┐
-│       Dedicated BigQuery Dataset      │  │   Cloud Monitoring (GCM)     │
-│       `ge_app_agy_telemetry`          │  │   Real-Time PromQL Dashboard │
-│  ├── Partitioned Raw Tables           │  │   - Token Burn Rates         │
-│  │   ├── inference_response           │  │   - Active Inferences        │
-│  │   ├── client_telemetry             │  │   - Error/429 Tracking       │
-│  │   └── inference_request            │  └──────────────────────────────┘
-│  │                                    │
-│  ├── Lifecycle & Retention Engine     │
-│  │   ├── 90-Day Auto Long-Term Price  │
-│  │   ├── Auto-Expiring Partitions     │
-│  │   └── Scheduled Parquet Export     │
-│  │       to Cloud Storage (Cold)      │
-│  │                                    │
-│  └── Analytical SQL Marts (Views)     │
-│      ├── v_ge_app_agy_adoption        │
-│      ├── v_ge_app_agy_trust_quality   │
-│      └── v_ge_app_agy_token_economics │
-│                  │                    │
-│                  ▼                    │
-│  [Optional] Join with Billing Export  │
-└──────────────────┬────────────────────┘
-                   │
-                   ▼
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ (Push Log Router Sink: ZDR)
+                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Executive & FinOps Dashboards                      │
-│                  Looker Studio / Web UI Application                     │
-└─────────────────────────────────────────────────────────────────────────┘
+│           Dedicated BigQuery Dataset: `ge_app_agy_telemetry`            │
+│  ├── Partitioned Raw Tables (Daily partition on timestamp)              │
+│  │   ├── businessaicode_googleapis_com_inference_response               │
+│  │   ├── businessaicode_googleapis_com_client_telemetry                 │
+│  │   └── businessaicode_googleapis_com_inference_request                │
+│  │                                                                      │
+│  ├── Retention Engine (Auto-expiring daily partitions, default: 90d)    │
+│  │                                                                      │
+│  └── Analytical SQL Marts (Views with embedded deduplication)           │
+│      ├── v_ge_app_agy_adoption        (DAU, sessions, inferences)       │
+│      ├── v_ge_app_agy_trust_quality   (Resolutions, grants, proposals)  │
+│      └── v_ge_app_agy_token_economics (Tokens, list vs discount cost)   │
+└───────────────────┬────────────────────────────────┬────────────────────┘
+                    │                                │
+                    ▼                                ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│        Looker Studio (Cloud BI)      │  │    Local Web Dashboard       │
+│  • 1-Click via BigQuery Console      │  │  • Node.js + Chart.js        │
+│  • Native BigQuery connector         │  │  • Port 8085 on Workstation  │
+│  • Executive sharing & drill-downs   │  │  • Live BQ refresh button    │
+└──────────────────────────────────────┘  └──────────────────────────────┘
 ```
 
 ---
@@ -262,10 +256,10 @@ The pipeline provides two primary visualization modalities, accompanied by archi
   * **Live Synchronization:** An interactive `↻ Refresh from BigQuery` button triggering live view extraction without server restart.
 * **Default Port:** `8085` (`http://sanjitmehta-work-1.c.googlers.com:8085` or `http://localhost:8085`).
 
-### 7.3 Google Cloud Monitoring (GCM) Scope & Architectural Boundary
+### 7.3 Google Cloud Monitoring (GCM) Engine Boundary
 * **Log Analytics Boundary:** Cloud Monitoring's SQL feature (`opsAnalyticsQuery`) routes queries exclusively to the **Cloud Logging Log Analytics engine**, which requires 4-part table references (`project.location.bucket.view`).
-* **BigQuery Dataset Incompatibility:** Standard 3-part BigQuery dataset views (`project.dataset.view`) are rejected at render time in the Cloud Console (`Query error: Request contains an invalid argument.`).
-* **Artifacts Preserved:** Parameterized GCM templates and deployment tooling are preserved in `dashboards/cloud-monitoring/` for environments utilizing upgraded Log Analytics log buckets.
+* **BigQuery Dataset Incompatibility:** Standard 3-part BigQuery dataset views (`project.dataset.view`) cannot be queried by Cloud Monitoring (`Query error: Request contains an invalid argument.`).
+* **Clean Boundary:** Non-functional Cloud Monitoring code has been excluded from the repository to prevent configuration errors. All reporting is served natively via Looker Studio (Cloud BI) and the local web dashboard.
 
 ---
 
@@ -295,15 +289,11 @@ ge-app-telemetry/
 │   └── README.md
 │
 └── dashboards/                              # Track 3: Reporting & Visualizations
-    ├── local-web/                           # Standalone executive dashboard
-    │   ├── server.mjs                       # Zero-dependency Node.js HTTP server
-    │   ├── fetch_data.sh                    # Live BigQuery data extractor
-    │   ├── start.sh / stop.sh               # Service lifecycle scripts
-    │   ├── public/index.html                # Responsive Chart.js dashboard
-    │   └── README.md
-    └── cloud-monitoring/                    # Cloud Monitoring templates & analysis
-        ├── ge_app_agy_dashboard.json.template
-        ├── deploy_dashboard.sh
+    └── local-web/                           # Standalone executive dashboard
+        ├── server.mjs                       # Zero-dependency Node.js HTTP server
+        ├── fetch_data.sh                    # Live BigQuery data extractor
+        ├── start.sh / stop.sh               # Service lifecycle scripts
+        ├── public/index.html                # Responsive Chart.js dashboard
         └── README.md
 ```
 

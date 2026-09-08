@@ -5,6 +5,8 @@ This repository provides an end-to-end telemetry and observability pipeline for 
 
 It routes events from Cloud Logging into BigQuery, provides analytical SQL views (data marts) with automated deduplication, and delivers reporting interfaces for adoption tracking, agent trust/quality evaluation, and FinOps cost attribution.
 
+For background on Google Antigravity enterprise features, models, and administrative policies, see the Google Cloud announcement: [Expanding Google Antigravity for enterprise customers](https://cloud.google.com/blog/products/ai-machine-learning/expanding-google-antigravity-for-enterprise-customers?e=48754805).
+
 ---
 
 ## Architecture Overview
@@ -76,16 +78,12 @@ ge-app-telemetry/
 │   └── README.md                           # View catalog & sample queries
 │
 └── dashboards/                             # Track 3: Reporting & Visualizations
-    ├── local-web/                          # Standalone Executive Dashboard
-    │   ├── server.mjs                      # Zero-dependency Node.js HTTP server
-    │   ├── fetch_data.sh                   # BigQuery data extractor
-    │   ├── start.sh / stop.sh              # Service lifecycle scripts
-    │   ├── public/index.html               # Responsive Chart.js dashboard
-    │   └── README.md                       # Local dashboard operational guide
-    └── cloud-monitoring/                   # Cloud Monitoring Templates & Analysis
-        ├── ge_app_agy_dashboard.json.template
-        ├── deploy_dashboard.sh
-        └── README.md                       # Scope & Log Analytics boundary notes
+    └── local-web/                          # Standalone Executive Dashboard
+        ├── server.mjs                      # Zero-dependency Node.js HTTP server
+        ├── fetch_data.sh                   # BigQuery data extractor
+        ├── start.sh / stop.sh              # Service lifecycle scripts
+        ├── public/index.html               # Responsive Chart.js dashboard
+        └── README.md                       # Local dashboard operational guide
 ```
 
 ---

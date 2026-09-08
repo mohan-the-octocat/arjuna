@@ -264,6 +264,6 @@ terraform destroy
 ## Next Steps: Analytical Views and Dashboards
 
 Once raw telemetry is streaming into `ge_app_agy_telemetry`:
-* **Track 2:** Analytical SQL data marts (`v_antigravity_adoption`, `v_antigravity_trust_quality`, `v_antigravity_token_economics`).
-* **Track 3:** Dashboards (Looker Studio executive template & Cloud Monitoring PromQL operational dashboard).
+* **Track 2:** Analytical SQL data marts (`v_ge_app_agy_adoption`, `v_ge_app_agy_trust_quality`, `v_ge_app_agy_token_economics`).
+* **Track 3:** Dashboards (Looker Studio executive reporting & Local Web Dashboard).
 

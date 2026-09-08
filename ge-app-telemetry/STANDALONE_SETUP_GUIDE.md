@@ -6,7 +6,7 @@ This guide provides a self-contained, step-by-step manual to deploy the **Google
 
 ## 1. Overview & Architecture
 
-When developers use **Google Antigravity** (Antigravity Hub, CLI, or IDE extensions) authenticated via **Gemini Enterprise (GE)**, the backend service logs operational events to Google Cloud Logging.
+When developers use **Google Antigravity** (Antigravity Hub, CLI, or IDE extensions) authenticated via **Gemini Enterprise (GE)**, the backend service logs operational events to Google Cloud Logging. For background on enterprise availability, see the Google Cloud announcement: [Expanding Google Antigravity for enterprise customers](https://cloud.google.com/blog/products/ai-machine-learning/expanding-google-antigravity-for-enterprise-customers?e=48754805).
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
