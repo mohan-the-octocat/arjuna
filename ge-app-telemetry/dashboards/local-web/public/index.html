@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Antigravity - Developer Telemetry & Observability</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-main: #F8FAFC;
+      --bg-card: #FFFFFF;
+      --text-main: #0F172A;
+      --text-muted: #64748B;
+      --border-color: #E2E8F0;
+      --blue-primary: #1A73E8;
+      --blue-tint: #F0F4FE;
+      --blue-border: #D2E3FC;
+      --green-primary: #1E8E3E;
+      --green-tint: #E6F4EA;
+      --red-primary: #D93025;
+      --red-tint: #FDF2F2;
+      --purple-primary: #8430CE;
+      --purple-tint: #F3E8FD;
+      --navy-banner: #1E293B;
+      --card-radius: 12px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      line-height: 1.5;
+      padding: 32px 48px;
+    }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    /* Top Bar */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 20px;
+    }
+
+    .header-titles h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+
+    .header-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .meta-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--blue-tint);
+      color: var(--blue-primary);
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+      font-size: 12px;
+      border: 1px solid var(--blue-border);
+    }
+
+    .meta-badge::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green-primary);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn-refresh {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn-refresh:hover {
+      background: #F1F5F9;
+      border-color: #CBD5E1;
+    }
+
+    .btn-refresh:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* KPI Row */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+      padding: 22px 24px;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+    }
+
+    .kpi-card.adoption { border-top: 4px solid var(--blue-primary); }
+    .kpi-card.quality { border-top: 4px solid var(--green-primary); }
+    .kpi-card.finops { border-top: 4px solid var(--purple-primary); }
+
+    .kpi-card-header {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .kpi-main-stat {
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 8px;
+    }
+
+    .kpi-metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .sub-metric-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .sub-metric-val {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* Charts Grid */
+    .grid-2col {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      margin-bottom: 28px;
+    }
+
+    .chart-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 18px;
+    }
+
+    .chart-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .chart-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .canvas-container {
+      position: relative;
+      height: 280px;
+      width: 100%;
+    }
+
+    /* Table Section */
+    .table-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 28px;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    th {
+      background: #F8FAFC;
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #F1F5F9;
+      color: var(--text-main);
+    }
+
+    tr:hover td {
+      background-color: #F8FAFC;
+    }
+
+    .tier-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--green-tint);
+      color: var(--green-primary);
+    }
+
+    /* Bottom Banner */
+    .takeaway-banner {
+      background: var(--navy-banner);
+      color: #F8FAFC;
+      padding: 18px 24px;
+      border-radius: var(--card-radius);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13.5px;
+    }
+
+    .takeaway-text strong {
+      color: #FFFFFF;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-titles">
+        <h1>Google Antigravity · Telemetry & Observability</h1>
+        <div class="header-meta">
+          <span class="meta-badge" id="connection-status">Live Connected</span>
+          <span>Project: <strong id="meta-project">...</strong></span>
+          <span>Dataset: <strong id="meta-dataset">...</strong></span>
+          <span>Last Synced: <span id="meta-synced">...</span></span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn-refresh" id="refresh-btn" onclick="triggerRefresh()">
+          <span>↻</span> Refresh from BigQuery
+        </button>
+      </div>
+    </header>
+
+    <!-- Top KPI Cards -->
+    <section class="kpi-row">
+      <!-- 1. Adoption -->
+      <div class="kpi-card adoption">
+        <div class="kpi-card-header">Developer Adoption</div>
+        <div class="kpi-main-stat" id="kpi-dau">--</div>
+        <div class="sub-metric-label">Daily Active Developers</div>
+        <div class="kpi-metrics-grid">
+          <div>
+            <div class="sub-metric-label">Total Inferences</div>
+            <div class="sub-metric-val" id="kpi-inferences">--</div>
+          </div>
+          <div>
+            <div class="sub-metric-label">Total Trajectories</div>
+            <div class="sub-metric-val" id="kpi-trajectories">--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Trust & Quality -->
+      <div class="kpi-card quality">
+        <div class="kpi-card-header">Agent Trust & Quality</div>
+        <div class="kpi-main-stat" id="kpi-resolution-rate">--%</div>
+        <div class="sub-metric-label">Task Resolution Rate</div>
+        <div class="kpi-metrics-grid">
+          <div>
+            <div class="sub-metric-label">Permission Grant Rate</div>
+            <div class="sub-metric-val" id="kpi-perm-rate">--%</div>
+          </div>
+          <div>
+            <div class="sub-metric-label">Avg Inferences/Task</div>
+            <div class="sub-metric-val" id="kpi-inf-per-task">--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. FinOps -->
+      <div class="kpi-card finops">
+        <div class="kpi-card-header">Token Economics & FinOps</div>
+        <div class="kpi-main-stat" id="kpi-cost">$--</div>
+        <div class="sub-metric-label">Est. List Cost (50% Disc: <span id="kpi-disc-cost">$--</span>)</div>
+        <div class="kpi-metrics-grid">
+          <div>
+            <div class="sub-metric-label">Total Tokens</div>
+            <div class="sub-metric-val" id="kpi-tokens">-- M</div>
+          </div>
+          <div>
+            <div class="sub-metric-label">Avg Tokens / Turn</div>
+            <div class="sub-metric-val" id="kpi-tokens-per-turn">-- K</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Charts Row 1: Adoption & Usage -->
+    <section class="grid-2col">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Inference Volume Over Time</div>
+          <div class="chart-desc">Daily LLM inferences across models</div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="chart-inferences"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Active Trajectories Over Time</div>
+          <div class="chart-desc">Multi-turn agent coding sessions</div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="chart-trajectories"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Charts Row 2: Quality & Human-in-the-Loop Decisions -->
+    <section class="grid-2col">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Developer Tool Approvals</div>
+          <div class="chart-desc">Permission grants accepted vs rejected</div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="chart-permissions"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Model Usage Distribution</div>
+          <div class="chart-desc">Inferences by Gemini model family</div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="chart-models"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Charts Row 3: Token Economics -->
+    <section class="grid-2col">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Daily Token Volume</div>
+          <div class="chart-desc">Total processed tokens per day</div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="chart-tokens"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Estimated Model Cost Attribution</div>
+          <div class="chart-desc">List price vs 50% Flash cached discount (USD)</div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="chart-cost"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Detailed Attribution Table -->
+    <section class="table-card">
+      <div class="chart-header">
+        <div class="chart-title">Model & Tier Cost Attribution</div>
+        <div class="chart-desc">Per-model workload metrics and pricing classifications</div>
+      </div>
+      <div class="table-container">
+        <table id="attribution-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Model</th>
+              <th>Inferences</th>
+              <th>Trajectories</th>
+              <th>Total Tokens</th>
+              <th>List Cost (USD)</th>
+              <th>Discounted Cost (USD)</th>
+              <th>Subscription Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="8" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Bottom Takeaway Banner -->
+    <div class="takeaway-banner">
+      <div class="takeaway-text">
+        <strong>Domain Note:</strong> Interactive IDE/CLI developer usage is covered under flat-rate subscription seats ($10/$15 PUPM).
+        Telemetry cost estimates reflect equivalent pay-as-you-go Vertex AI token consumption with 50% Flash caching applied.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let charts = {};
+
+    async function loadData() {
+      try {
+        const res = await fetch('/api/data');
+        if (!res.ok) throw new Error('Failed to load telemetry data');
+        const data = await res.json();
+        renderDashboard(data);
+      } catch (err) {
+        console.error(err);
+        document.getElementById('connection-status').innerText = 'Data Error';
+        document.getElementById('connection-status').style.color = '#D93025';
+      }
+    }
+
+    async function triggerRefresh() {
+      const btn = document.getElementById('refresh-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Refreshing...';
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        if (!res.ok) throw new Error('Refresh failed');
+        const data = await res.json();
+        renderDashboard(data);
+      } catch (err) {
+        alert('Failed to refresh data: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>↻</span> Refresh from BigQuery';
+      }
+    }
+
+    function renderDashboard(data) {
+      // 1. Metadata
+      document.getElementById('meta-project').innerText = data.metadata.project_id;
+      document.getElementById('meta-dataset').innerText = data.metadata.dataset_id;
+      document.getElementById('meta-synced').innerText = new Date(data.metadata.fetched_at).toLocaleString();
+
+      const adoption = data.adoption || [];
+      const trust = data.trust_quality || [];
+      const econ = data.token_economics || [];
+
+      // 2. Compute KPIs
+      const distinctUsers = new Set(adoption.map(r => r.user_email)).size;
+      const totalInferences = adoption.reduce((s, r) => s + (parseInt(r.total_inferences) || 0), 0);
+      const totalTrajectories = adoption.reduce((s, r) => s + (parseInt(r.active_trajectories) || 0), 0);
+      const avgInfPerTask = totalTrajectories > 0 ? (totalInferences / totalTrajectories).toFixed(1) : '0';
+
+      const resolvedTraj = trust.reduce((s, r) => s + (parseInt(r.resolved_trajectories) || 0), 0);
+      const totalTrajTrust = trust.reduce((s, r) => s + (parseInt(r.total_trajectories) || 0), 0);
+      const resolutionRate = totalTrajTrust > 0 ? ((resolvedTraj / totalTrajTrust) * 100).toFixed(1) : '100';
+
+      const permAccepted = trust.reduce((s, r) => s + (parseInt(r.permission_grants_accepted) || 0), 0);
+      const permTotal = trust.reduce((s, r) => s + (parseInt(r.permission_requests_total) || 0), 0);
+      const permRate = permTotal > 0 ? ((permAccepted / permTotal) * 100).toFixed(1) : '100';
+
+      const totalTokens = econ.reduce((s, r) => s + (parseInt(r.total_tokens) || 0), 0);
+      const totalListCost = econ.reduce((s, r) => s + (parseFloat(r.estimated_cost_usd_list) || 0), 0);
+      const totalDiscCost = econ.reduce((s, r) => s + (parseFloat(r.estimated_cost_usd_discounted) || 0), 0);
+      const avgTokensPerTurn = totalInferences > 0 ? Math.round(totalTokens / totalInferences / 1000) : 0;
+
+      document.getElementById('kpi-dau').innerText = distinctUsers;
+      document.getElementById('kpi-inferences').innerText = totalInferences.toLocaleString();
+      document.getElementById('kpi-trajectories').innerText = totalTrajectories.toLocaleString();
+      document.getElementById('kpi-resolution-rate').innerText = resolutionRate + '%';
+      document.getElementById('kpi-perm-rate').innerText = permRate + '%';
+      document.getElementById('kpi-inf-per-task').innerText = avgInfPerTask;
+      document.getElementById('kpi-cost').innerText = '$' + totalListCost.toFixed(2);
+      document.getElementById('kpi-disc-cost').innerText = '$' + totalDiscCost.toFixed(2);
+      document.getElementById('kpi-tokens').innerText = (totalTokens / 1000000).toFixed(1) + ' M';
+      document.getElementById('kpi-tokens-per-turn').innerText = avgTokensPerTurn + ' K';
+
+      // 3. Render Charts
+      renderAdoptionCharts(adoption);
+      renderQualityCharts(trust);
+      renderEconCharts(econ);
+
+      // 4. Render Table
+      renderTable(econ);
+    }
+
+    function renderAdoptionCharts(adoption) {
+      // Aggregate by date
+      const byDate = {};
+      const byModel = {};
+
+      adoption.forEach(r => {
+        byDate[r.event_date] = byDate[r.event_date] || { inf: 0, traj: 0 };
+        byDate[r.event_date].inf += parseInt(r.total_inferences) || 0;
+        byDate[r.event_date].traj += parseInt(r.active_trajectories) || 0;
+
+        byModel[r.model] = (byModel[r.model] || 0) + (parseInt(r.total_inferences) || 0);
+      });
+
+      const dates = Object.keys(byDate).sort();
+
+      // Chart 1: Inferences Line
+      if (charts.inferences) charts.inferences.destroy();
+      charts.inferences = new Chart(document.getElementById('chart-inferences'), {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: 'Inferences',
+            data: dates.map(d => byDate[d].inf),
+            borderColor: '#1A73E8',
+            backgroundColor: 'rgba(26, 115, 232, 0.08)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+
+      // Chart 2: Trajectories Bar
+      if (charts.trajectories) charts.trajectories.destroy();
+      charts.trajectories = new Chart(document.getElementById('chart-trajectories'), {
+        type: 'bar',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: 'Active Trajectories',
+            data: dates.map(d => byDate[d].traj),
+            backgroundColor: '#1E8E3E',
+            borderRadius: 6
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+
+      // Chart: Model Distribution Donut
+      const models = Object.keys(byModel);
+      if (charts.models) charts.models.destroy();
+      charts.models = new Chart(document.getElementById('chart-models'), {
+        type: 'doughnut',
+        data: {
+          labels: models,
+          datasets: [{
+            data: models.map(m => byModel[m]),
+            backgroundColor: ['#1A73E8', '#1E8E3E', '#F9AB00', '#9334E6', '#EA4335']
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+    }
+
+    function renderQualityCharts(trust) {
+      const dates = [...new Set(trust.map(r => r.event_date))].sort();
+      const permsByDate = {};
+      dates.forEach(d => { permsByDate[d] = { acc: 0, rej: 0 }; });
+
+      trust.forEach(r => {
+        permsByDate[r.event_date].acc += parseInt(r.permission_grants_accepted) || 0;
+        permsByDate[r.event_date].rej += parseInt(r.permission_grants_rejected) || 0;
+      });
+
+      if (charts.permissions) charts.permissions.destroy();
+      charts.permissions = new Chart(document.getElementById('chart-permissions'), {
+        type: 'bar',
+        data: {
+          labels: dates,
+          datasets: [
+            {
+              label: 'Accepted',
+              data: dates.map(d => permsByDate[d].acc),
+              backgroundColor: '#1E8E3E'
+            },
+            {
+              label: 'Rejected',
+              data: dates.map(d => permsByDate[d].rej),
+              backgroundColor: '#D93025'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { x: { stacked: true }, y: { stacked: true } }
+        }
+      });
+    }
+
+    function renderEconCharts(econ) {
+      const byDate = {};
+      econ.forEach(r => {
+        byDate[r.event_date] = byDate[r.event_date] || { tokens: 0, listCost: 0, discCost: 0 };
+        byDate[r.event_date].tokens += parseInt(r.total_tokens) || 0;
+        byDate[r.event_date].listCost += parseFloat(r.estimated_cost_usd_list) || 0;
+        byDate[r.event_date].discCost += parseFloat(r.estimated_cost_usd_discounted) || 0;
+      });
+
+      const dates = Object.keys(byDate).sort();
+
+      // Tokens Chart
+      if (charts.tokens) charts.tokens.destroy();
+      charts.tokens = new Chart(document.getElementById('chart-tokens'), {
+        type: 'bar',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: 'Total Tokens',
+            data: dates.map(d => byDate[d].tokens),
+            backgroundColor: '#8430CE',
+            borderRadius: 6
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+
+      // Cost Chart
+      if (charts.cost) charts.cost.destroy();
+      charts.cost = new Chart(document.getElementById('chart-cost'), {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [
+            {
+              label: 'List Cost (USD)',
+              data: dates.map(d => byDate[d].listCost.toFixed(3)),
+              borderColor: '#D93025',
+              borderWidth: 2,
+              tension: 0.2
+            },
+            {
+              label: '50% Flash Discount (USD)',
+              data: dates.map(d => byDate[d].discCost.toFixed(3)),
+              borderColor: '#1E8E3E',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              tension: 0.2
+            }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+    }
+
+    function renderTable(econ) {
+      const tbody = document.querySelector('#attribution-table tbody');
+      if (!econ || econ.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No records found.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = econ.map(r => `
+        <tr>
+          <td><strong>${r.event_date}</strong></td>
+          <td><code>${r.model}</code></td>
+          <td>${parseInt(r.total_inferences).toLocaleString()}</td>
+          <td>${r.active_trajectories || 0}</td>
+          <td>${parseInt(r.total_tokens).toLocaleString()}</td>
+          <td>$${parseFloat(r.estimated_cost_usd_list).toFixed(4)}</td>
+          <td>$${parseFloat(r.estimated_cost_usd_discounted).toFixed(4)}</td>
+          <td><span class="tier-badge">${r.subscription_tier_type || 'SEAT_INCLUDED'}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    window.onload = loadData;
+  </script>
+</body>
+</html>

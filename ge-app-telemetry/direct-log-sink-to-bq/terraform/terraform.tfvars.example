@@ -1,0 +1,24 @@
+# ==============================================================================
+# Google Antigravity (Gemini Enterprise) - Terraform Variables Example
+# ==============================================================================
+
+project_id                = "my-ge-project-id"
+destination_project_id    = "my-ge-project-id" # Or central analytics project
+dataset_id                = "ge_app_agy_telemetry"
+dataset_location          = "us-central1"      # e.g. "asia-northeast1", "australia-southeast1"
+sink_name                 = "ge-app-agy-telemetry-sink"
+partition_expiration_days = 90
+exclude_prompt_contents   = true               # Privacy/ZDR mode: excludes prompt/code bodies
+
+# Downstream reader identities granted dataViewer on the dataset
+reader_service_accounts = [
+  # "serviceAccount:looker-studio@my-project.iam.gserviceaccount.com",
+  # "group:finops-analysts@example.com"
+]
+
+resource_labels = {
+  "environment"    = "production"
+  "managed-by"     = "antigravity-extensions"
+  "module"         = "ge-app-direct-log-sink-to-bq"
+  "telemetry-type" = "gemini-enterprise-antigravity"
+}
