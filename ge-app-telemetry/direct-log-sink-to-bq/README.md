@@ -42,7 +42,29 @@ Antigravity in Gemini Enterprise emits the following top-level labels on each lo
 * `labels.request_id`: Turn-level execution step ID.
 * `labels.client_name`: Client surface (`antigravity_hub`, `antigravity_cli`, `vscode`).
 * `labels.model`: Model called (`gemini-3.7-flash`).
-* `client_telemetry`: Interaction outcomes (`PROPOSAL_ACCEPTANCE`, `PERMISSION_GRANT` $\rightarrow$ `ACCEPTED`, `REJECTED`, `MODIFIED`).
+* `client_telemetry`: Interaction outcomes (`PROPOSAL_ACCEPTANCE`, `PERMISSION_GRANT` → `ACCEPTED`, `REJECTED`, `MODIFIED`).
+
+---
+
+## Privacy & Security: Dual-Plane Isolation Architecture
+
+Enterprise platform and security teams have two distinct observability requirements:
+1. **Developer Adoption & FinOps Telemetry (Broad Access):** Engineering managers, scrum masters, and FinOps analysts need visibility into DAU, tokens burned, and tool acceptance rates, but must **never** see proprietary developer prompts or code diffs.
+2. **Security & Compliance Auditing (Restricted Access):** Security and compliance officers may require full prompt and completion payloads (`inference_request`, `inference_response`) to investigate security incidents or verify data protection policies.
+
+To enforce the principle of least privilege, `direct-log-sink-to-bq` supports a **Dual-Plane Isolation Architecture**:
+
+* **Primary Telemetry Dataset (`ge_app_agy_telemetry`):**
+  * **Sink:** `ge-app-agy-telemetry-sink`
+  * **Privacy:** Enforces Zero Data Retention (ZDR) exclusion filter (`jsonPayload.contents:*`). Prompts and completions are discarded at the router level.
+  * **Retention:** Default 90 days (configurable up to 365 days).
+  * **Access:** Granted broadly to engineering leads and Looker Studio viewers.
+* **Optional Prompt Audit Dataset (`ge_app_agy_prompts_audit`):**
+  * **Sink:** `ge-app-agy-prompts-audit-sink`
+  * **Ingestion:** Streams `inference_request` and `inference_response` payloads **without** exclusion filters.
+  * **Retention:** Default 30 days (short TTL to minimize data liability).
+  * **Access:** Restricted strictly to designated Security / Compliance officers.
+  * **Deployment Flag:** Pass `--enable-prompt-audit true` to `deploy.sh` or set `enable_prompt_audit_dataset = true` in Terraform.
 
 ---
 

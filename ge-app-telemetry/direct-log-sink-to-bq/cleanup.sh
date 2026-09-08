@@ -24,11 +24,16 @@ NC='\033[0m' # No Color
 DEFAULT_CONFIG_FILE="config.yaml"
 DEFAULT_DATASET_ID="ge_app_agy_telemetry"
 DEFAULT_SINK_NAME="ge-app-agy-telemetry-sink"
+DEFAULT_AUDIT_DATASET_ID="ge_app_agy_prompts_audit"
+DEFAULT_AUDIT_SINK_NAME="ge-app-agy-prompts-audit-sink"
 
 PROJECT_ID=""
 DEST_PROJECT_ID=""
 DATASET_ID=""
 SINK_NAME=""
+AUDIT_DATASET_ID=""
+AUDIT_SINK_NAME=""
+CLEAN_AUDIT=false
 CONFIG_FILE=""
 HEADLESS=false
 FORCE=false
@@ -71,6 +76,9 @@ Options:
   -d, --dest-project-id ID      Destination GCP Project ID hosting BigQuery (default: same as project-id)
   --dataset-id ID               Dedicated BigQuery dataset ID to remove (default: ${DEFAULT_DATASET_ID})
   -s, --sink-name NAME          Cloud Logging sink identifier to remove (default: ${DEFAULT_SINK_NAME})
+  --clean-audit                 Also delete the prompt audit sink and dataset if present
+  --audit-dataset-id ID         Dedicated BigQuery prompt audit dataset ID (default: ${DEFAULT_AUDIT_DATASET_ID})
+  --audit-sink-name NAME        Cloud Logging prompt audit sink identifier (default: ${DEFAULT_AUDIT_SINK_NAME})
   -f, --force                   Force remove dataset without prompting for tables
   -y, --yes, --headless         Non-interactive mode (skips confirmation prompts)
   -h, --help                    Display this help message and exit
@@ -139,6 +147,9 @@ while [[ $# -gt 0 ]]; do
     -d|--dest-project-id) DEST_PROJECT_ID="$2"; shift 2 ;;
     --dataset-id) DATASET_ID="$2"; shift 2 ;;
     -s|--sink-name) SINK_NAME="$2"; shift 2 ;;
+    --clean-audit) CLEAN_AUDIT=true; shift ;;
+    --audit-dataset-id) AUDIT_DATASET_ID="$2"; shift 2 ;;
+    --audit-sink-name) AUDIT_SINK_NAME="$2"; shift 2 ;;
     -f|--force) FORCE=true; shift ;;
     -y|--yes|--headless) HEADLESS=true; shift ;;
     -h|--help) usage ;;
@@ -160,6 +171,8 @@ PROJECT_ID="${PROJECT_ID:-$ACTIVE_GCLOUD_PROJECT}"
 DEST_PROJECT_ID="${DEST_PROJECT_ID:-$PROJECT_ID}"
 DATASET_ID="${DATASET_ID:-$DEFAULT_DATASET_ID}"
 SINK_NAME="${SINK_NAME:-$DEFAULT_SINK_NAME}"
+AUDIT_DATASET_ID="${AUDIT_DATASET_ID:-$DEFAULT_AUDIT_DATASET_ID}"
+AUDIT_SINK_NAME="${AUDIT_SINK_NAME:-$DEFAULT_AUDIT_SINK_NAME}"
 
 # Interactive prompt if not headless
 if [[ "$HEADLESS" != "true" ]]; then
@@ -223,11 +236,31 @@ else
 fi
 
 # ------------------------------------------------------------------------------
+# Step 3: (Optional) Delete Prompt Audit Sink & Dataset
+# ------------------------------------------------------------------------------
+if [[ "$CLEAN_AUDIT" == "true" ]]; then
+  log_info "Checking prompt audit Cloud Logging sink ${AUDIT_SINK_NAME} in project ${PROJECT_ID}..."
+  AUDIT_SINK_EXISTS=$(gcloud logging sinks list --project="${PROJECT_ID}" --filter="name=${AUDIT_SINK_NAME}" --format="value(name)" 2>/dev/null || echo "")
+  if [[ -n "$AUDIT_SINK_EXISTS" ]]; then
+    log_info "Deleting audit Cloud Logging sink: ${AUDIT_SINK_NAME}..."
+    gcloud logging sinks delete "${AUDIT_SINK_NAME}" --project="${PROJECT_ID}" --quiet
+    log_success "Deleted audit Cloud Logging sink ${AUDIT_SINK_NAME}."
+  fi
+
+  log_info "Checking audit BigQuery dataset ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}..."
+  if bq show --project_id="${DEST_PROJECT_ID}" "${AUDIT_DATASET_ID}" &> /dev/null; then
+    log_info "Deleting audit BigQuery dataset and all containing tables: ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}..."
+    bq rm -r -f --project_id="${DEST_PROJECT_ID}" "${AUDIT_DATASET_ID}"
+    log_success "Deleted audit BigQuery dataset ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}."
+  fi
+fi
+
+# ------------------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------------------
 echo ""
 echo -e "${GREEN}${BOLD}=============================================================================="
 echo " Antigravity Direct Log Sink Teardown Complete! 🧹"
 echo "==============================================================================${NC}"
-echo -e "All sink and dataset assets have been removed from ${PROJECT_ID}."
+echo -e "All requested sink and dataset assets have been removed from ${PROJECT_ID}."
 echo ""

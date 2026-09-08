@@ -32,6 +32,10 @@ DEFAULT_SINK_NAME="ge-app-agy-telemetry-sink"
 DEFAULT_RETENTION_DAYS="90"
 DEFAULT_EXCLUDE_PROMPTS="true"
 DEFAULT_FLASH_DISCOUNT="true"
+DEFAULT_ENABLE_PROMPT_AUDIT="false"
+DEFAULT_AUDIT_DATASET_ID="ge_app_agy_prompts_audit"
+DEFAULT_AUDIT_SINK_NAME="ge-app-agy-prompts-audit-sink"
+DEFAULT_AUDIT_RETENTION_DAYS="30"
 
 PROJECT_ID=""
 DEST_PROJECT_ID=""
@@ -42,6 +46,10 @@ PARTITION_EXPIRATION_DAYS=""
 EXCLUDE_PROMPT_CONTENTS=""
 FLASH_DISCOUNT_APPLIED=""
 DEPLOYER_SERVICE_ACCOUNT=""
+ENABLE_PROMPT_AUDIT=""
+AUDIT_DATASET_ID=""
+AUDIT_SINK_NAME=""
+AUDIT_RETENTION_DAYS=""
 CONFIG_FILE=""
 HEADLESS=false
 
@@ -86,6 +94,10 @@ Options:
   -s, --sink-name NAME          Cloud Logging sink identifier (default: ${DEFAULT_SINK_NAME})
   -r, --retention-days DAYS     Daily partition expiration in days (default: ${DEFAULT_RETENTION_DAYS}, 0 = never)
   --exclude-prompts BOOL        Exclude raw code/prompts for privacy/ZDR (true/false, default: ${DEFAULT_EXCLUDE_PROMPTS})
+  --enable-prompt-audit BOOL    Deploy isolated dataset for raw prompts/responses (default: ${DEFAULT_ENABLE_PROMPT_AUDIT})
+  --audit-dataset-id ID         Dedicated BigQuery dataset ID for prompt audit (default: ${DEFAULT_AUDIT_DATASET_ID})
+  --audit-sink-name NAME        Cloud Logging sink identifier for prompt audit (default: ${DEFAULT_AUDIT_SINK_NAME})
+  --audit-retention-days DAYS   Audit partition expiration in days (default: ${DEFAULT_AUDIT_RETENTION_DAYS})
   --impersonate-sa SA_EMAIL     Deployer Service Account to impersonate
   -y, --yes, --headless         Run in non-interactive/headless mode without prompts
   -h, --help                    Display this help message and exit
@@ -145,6 +157,10 @@ with open('${file}', 'r') as f:
       exclude_prompt_contents) [[ -z "$EXCLUDE_PROMPT_CONTENTS" ]] && EXCLUDE_PROMPT_CONTENTS="$val" ;;
       flash_discount_applied) [[ -z "$FLASH_DISCOUNT_APPLIED" ]] && FLASH_DISCOUNT_APPLIED="$val" ;;
       deployer_service_account) [[ -z "$DEPLOYER_SERVICE_ACCOUNT" ]] && DEPLOYER_SERVICE_ACCOUNT="$val" ;;
+      enable_prompt_audit) [[ -z "$ENABLE_PROMPT_AUDIT" ]] && ENABLE_PROMPT_AUDIT="$val" ;;
+      audit_dataset_id) [[ -z "$AUDIT_DATASET_ID" ]] && AUDIT_DATASET_ID="$val" ;;
+      audit_sink_name) [[ -z "$AUDIT_SINK_NAME" ]] && AUDIT_SINK_NAME="$val" ;;
+      audit_retention_days) [[ -z "$AUDIT_RETENTION_DAYS" ]] && AUDIT_RETENTION_DAYS="$val" ;;
     esac
   done < /tmp/agy_parsed_config.env
   rm -f /tmp/agy_parsed_config.env
@@ -162,7 +178,23 @@ while [[ $# -gt 0 ]]; do
     -l|--location) DATASET_LOCATION="$2"; shift 2 ;;
     -s|--sink-name) SINK_NAME="$2"; shift 2 ;;
     -r|--retention-days) PARTITION_EXPIRATION_DAYS="$2"; shift 2 ;;
-    --exclude-prompts) EXCLUDE_PROMPT_CONTENTS="$2"; shift 2 ;;
+    --exclude-prompts)
+      if [[ -n "${2:-}" && "$2" != -* ]]; then
+        EXCLUDE_PROMPT_CONTENTS="$2"; shift 2
+      else
+        EXCLUDE_PROMPT_CONTENTS="true"; shift 1
+      fi
+      ;;
+    --enable-prompt-audit)
+      if [[ -n "${2:-}" && "$2" != -* ]]; then
+        ENABLE_PROMPT_AUDIT="$2"; shift 2
+      else
+        ENABLE_PROMPT_AUDIT="true"; shift 1
+      fi
+      ;;
+    --audit-dataset-id) AUDIT_DATASET_ID="$2"; shift 2 ;;
+    --audit-sink-name) AUDIT_SINK_NAME="$2"; shift 2 ;;
+    --audit-retention-days) AUDIT_RETENTION_DAYS="$2"; shift 2 ;;
     --impersonate-sa) DEPLOYER_SERVICE_ACCOUNT="$2"; shift 2 ;;
     -y|--yes|--headless) HEADLESS=true; shift ;;
     -h|--help) usage ;;
@@ -205,6 +237,10 @@ DATASET_LOCATION="${DATASET_LOCATION:-$DEFAULT_LOCATION}"
 SINK_NAME="${SINK_NAME:-$DEFAULT_SINK_NAME}"
 PARTITION_EXPIRATION_DAYS="${PARTITION_EXPIRATION_DAYS:-$DEFAULT_RETENTION_DAYS}"
 EXCLUDE_PROMPT_CONTENTS="${EXCLUDE_PROMPT_CONTENTS:-$DEFAULT_EXCLUDE_PROMPTS}"
+ENABLE_PROMPT_AUDIT="${ENABLE_PROMPT_AUDIT:-$DEFAULT_ENABLE_PROMPT_AUDIT}"
+AUDIT_DATASET_ID="${AUDIT_DATASET_ID:-$DEFAULT_AUDIT_DATASET_ID}"
+AUDIT_SINK_NAME="${AUDIT_SINK_NAME:-$DEFAULT_AUDIT_SINK_NAME}"
+AUDIT_RETENTION_DAYS="${AUDIT_RETENTION_DAYS:-$DEFAULT_AUDIT_RETENTION_DAYS}"
 
 log_info "Active Account : ${ACTIVE_GCLOUD_ACCOUNT:-None}"
 
@@ -236,6 +272,17 @@ if [[ "$HEADLESS" != "true" ]]; then
   read -r -p "Exclude Prompts/Code (Privacy Mode) [${EXCLUDE_PROMPT_CONTENTS}]: " input_priv
   EXCLUDE_PROMPT_CONTENTS="${input_priv:-$EXCLUDE_PROMPT_CONTENTS}"
 
+  read -r -p "Deploy isolated Security Prompt Audit Dataset? (y/N) [${ENABLE_PROMPT_AUDIT}]: " input_audit
+  if [[ "$input_audit" =~ ^[Yy]$ ]]; then
+    ENABLE_PROMPT_AUDIT="true"
+    read -r -p "Audit Dataset ID [${AUDIT_DATASET_ID}]: " input_audit_ds
+    AUDIT_DATASET_ID="${input_audit_ds:-$AUDIT_DATASET_ID}"
+    read -r -p "Audit Partition Lifespan in days [${AUDIT_RETENTION_DAYS}]: " input_audit_ret
+    AUDIT_RETENTION_DAYS="${input_audit_ret:-$AUDIT_RETENTION_DAYS}"
+  elif [[ -n "$input_audit" ]]; then
+    ENABLE_PROMPT_AUDIT="false"
+  fi
+
   echo ""
 fi
 
@@ -261,6 +308,7 @@ echo -e "  BigQuery Dataset   : ${BOLD}${DATASET_ID}${NC} (Region: ${DATASET_LOC
 echo -e "  Sink Name          : ${BOLD}${SINK_NAME}${NC}"
 echo -e "  Partition Lifespan : ${BOLD}${PARTITION_EXPIRATION_DAYS} days${NC}"
 echo -e "  Privacy Exclusion  : ${BOLD}${EXCLUDE_PROMPT_CONTENTS}${NC} (Exclude prompt bodies)"
+echo -e "  Prompt Audit Mart  : ${BOLD}${ENABLE_PROMPT_AUDIT}${NC} (Dataset: ${AUDIT_DATASET_ID}, TTL: ${AUDIT_RETENTION_DAYS}d)"
 echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
 
 if [[ "$HEADLESS" != "true" ]]; then
@@ -337,9 +385,23 @@ CREATE_OR_UPDATE_CMD+=(
 # Apply privacy exclusion filter if enabled
 if [[ "$EXCLUDE_PROMPT_CONTENTS" == "true" ]]; then
   log_info "Applying Zero Data Retention (ZDR) privacy filter: excluding prompt/code text..."
-  CREATE_OR_UPDATE_CMD+=(
-    --exclusion="name=exclude-prompt-contents,description=Excludes raw prompt text and code diffs from BigQuery,filter=logName=~\"businessaicode.googleapis.com%2Finference_response\" AND jsonPayload.contents:*"
-  )
+  EXCLUSION_FILTER='logName=~"businessaicode.googleapis.com%2Finference_response" AND jsonPayload.contents:*'
+  if [[ -n "$SINK_EXISTS" ]]; then
+    EXCLUSION_EXISTS=$(gcloud logging sinks describe "${SINK_NAME}" --project="${PROJECT_ID}" --format="value(exclusions[].name)" "${GCLOUD_EXTRA_FLAGS[@]}" 2>/dev/null | grep -w "exclude-prompt-contents" || true)
+    if [[ -n "$EXCLUSION_EXISTS" ]]; then
+      CREATE_OR_UPDATE_CMD+=(
+        --update-exclusion="name=exclude-prompt-contents,description=Excludes raw prompt text and code diffs from BigQuery,filter=${EXCLUSION_FILTER}"
+      )
+    else
+      CREATE_OR_UPDATE_CMD+=(
+        --add-exclusion="name=exclude-prompt-contents,description=Excludes raw prompt text and code diffs from BigQuery,filter=${EXCLUSION_FILTER}"
+      )
+    fi
+  else
+    CREATE_OR_UPDATE_CMD+=(
+      --exclusion="name=exclude-prompt-contents,description=Excludes raw prompt text and code diffs from BigQuery,filter=${EXCLUSION_FILTER}"
+    )
+  fi
 fi
 
 "${CREATE_OR_UPDATE_CMD[@]}"
@@ -395,7 +457,94 @@ fi
 rm -f "$TMP_DS_FILE"
 
 # ------------------------------------------------------------------------------
-# Step 5: Verification & Completion
+# Step 5: (Optional) Security Prompt Audit Dataset & Sink
+# ------------------------------------------------------------------------------
+if [[ "$ENABLE_PROMPT_AUDIT" == "true" ]]; then
+  log_info "Configuring optional Security & Compliance Prompt Audit Sink..."
+
+  # Step 5a: Create Dedicated Audit Dataset with short partition expiration
+  log_info "Checking if Audit BigQuery dataset ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID} exists..."
+  if bq show --project_id="${DEST_PROJECT_ID}" "${AUDIT_DATASET_ID}" &> /dev/null; then
+    log_info "Audit dataset ${AUDIT_DATASET_ID} already exists."
+  else
+    log_info "Creating isolated Audit dataset ${AUDIT_DATASET_ID} in ${DATASET_LOCATION} with ${AUDIT_RETENTION_DAYS}-day TTL..."
+    AUDIT_EXPIRATION_SECS=$((AUDIT_RETENTION_DAYS * 86400))
+    AUDIT_BQ_FLAGS=(--project_id="${DEST_PROJECT_ID}" --location="${DATASET_LOCATION}" --dataset)
+    AUDIT_BQ_FLAGS+=(--description="Google Antigravity Security Audit & Prompt Payloads (Restricted Access)")
+    if [[ "$AUDIT_RETENTION_DAYS" -gt 0 ]]; then
+      AUDIT_BQ_FLAGS+=(--default_partition_expiration="${AUDIT_EXPIRATION_SECS}")
+    fi
+    bq mk "${AUDIT_BQ_FLAGS[@]}" "${AUDIT_DATASET_ID}"
+    log_success "Created audit dataset ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}"
+  fi
+
+  # Step 5b: Create Audit Sink for inference_request and inference_response (WITHOUT prompt exclusion)
+  AUDIT_SINK_DESTINATION="bigquery.googleapis.com/projects/${DEST_PROJECT_ID}/datasets/${AUDIT_DATASET_ID}"
+  AUDIT_SINK_FILTER='resource.type="businessaicode.googleapis.com/BAICInstance" AND (logName=~"businessaicode.googleapis.com%2Finference_request" OR logName=~"businessaicode.googleapis.com%2Finference_response")'
+
+  log_info "Configuring Audit Log Router Sink: ${AUDIT_SINK_NAME}..."
+  AUDIT_SINK_EXISTS=$(gcloud logging sinks list --project="${PROJECT_ID}" --filter="name=${AUDIT_SINK_NAME}" --format="value(name)" "${GCLOUD_EXTRA_FLAGS[@]}")
+
+  AUDIT_SINK_CMD=(gcloud logging sinks)
+  if [[ -n "$AUDIT_SINK_EXISTS" ]]; then
+    log_info "Updating existing audit sink ${AUDIT_SINK_NAME}..."
+    AUDIT_SINK_CMD+=(update "${AUDIT_SINK_NAME}" "${AUDIT_SINK_DESTINATION}")
+  else
+    log_info "Creating new audit sink ${AUDIT_SINK_NAME}..."
+    AUDIT_SINK_CMD+=(create "${AUDIT_SINK_NAME}" "${AUDIT_SINK_DESTINATION}")
+  fi
+
+  AUDIT_SINK_CMD+=(
+    --project="${PROJECT_ID}"
+    --log-filter="${AUDIT_SINK_FILTER}"
+    --use-partitioned-tables
+    --description="Routes Google Antigravity full prompt & response payloads to restricted audit dataset"
+    "${GCLOUD_EXTRA_FLAGS[@]}"
+    --quiet
+  )
+  "${AUDIT_SINK_CMD[@]}"
+  log_success "Audit sink ${AUDIT_SINK_NAME} configured successfully."
+
+  # Step 5c: Extract Audit Writer Identity and grant access
+  AUDIT_WRITER_IDENTITY=$(gcloud logging sinks describe "${AUDIT_SINK_NAME}" \
+    --project="${PROJECT_ID}" \
+    --format="value(writerIdentity)" \
+    "${GCLOUD_EXTRA_FLAGS[@]}")
+  AUDIT_WRITER_EMAIL="${AUDIT_WRITER_IDENTITY#serviceAccount:}"
+  log_info "Granting 'roles/bigquery.dataEditor' on audit dataset to ${AUDIT_WRITER_EMAIL}..."
+
+  TMP_AUDIT_DS_FILE=$(mktemp)
+  bq show --format=prettyjson "${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}" > "$TMP_AUDIT_DS_FILE"
+  python3 -c "
+import json
+with open('${TMP_AUDIT_DS_FILE}', 'r') as f:
+    data = json.load(f)
+access = data.get('access', [])
+writer_sa = '${AUDIT_WRITER_EMAIL}'
+exists = any(a.get('userByEmail') == writer_sa and a.get('role') in ('WRITER', 'roles/bigquery.dataEditor') for a in access)
+if not exists:
+    access.append({'role': 'WRITER', 'userByEmail': writer_sa})
+    data['access'] = access
+    with open('${TMP_AUDIT_DS_FILE}', 'w') as f:
+        json.dump(data, f, indent=2)
+    print('UPDATED')
+else:
+    print('EXISTS')
+" > /tmp/agy_audit_iam_status.txt
+
+  AUDIT_IAM_STATUS=$(cat /tmp/agy_audit_iam_status.txt)
+  rm -f /tmp/agy_audit_iam_status.txt
+  if [[ "$AUDIT_IAM_STATUS" == "UPDATED" ]]; then
+    bq update --source "$TMP_AUDIT_DS_FILE" "${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}" > /dev/null
+    log_success "Granted dataEditor access on audit dataset to ${AUDIT_WRITER_EMAIL}."
+  else
+    log_info "Audit writer already has dataEditor access on audit dataset."
+  fi
+  rm -f "$TMP_AUDIT_DS_FILE"
+fi
+
+# ------------------------------------------------------------------------------
+# Step 6: Verification & Completion
 # ------------------------------------------------------------------------------
 echo ""
 echo -e "${GREEN}${BOLD}=============================================================================="
@@ -407,6 +556,10 @@ echo -e "  ${BOLD}BigQuery Dataset   :${NC} ${DEST_PROJECT_ID}:${DATASET_ID} (${
 echo -e "  ${BOLD}Writer Identity    :${NC} ${WRITER_IDENTITY}"
 echo -e "  ${BOLD}Retention Lifespan :${NC} ${PARTITION_EXPIRATION_DAYS} days (auto-expiring partitions)"
 echo -e "  ${BOLD}Privacy Filter     :${NC} ${EXCLUDE_PROMPT_CONTENTS}"
+if [[ "$ENABLE_PROMPT_AUDIT" == "true" ]]; then
+  echo -e "  ${BOLD}Audit Sink Name    :${NC} ${AUDIT_SINK_NAME}"
+  echo -e "  ${BOLD}Audit Dataset      :${NC} ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID} (TTL: ${AUDIT_RETENTION_DAYS}d, Unsanitized Prompts)"
+fi
 echo ""
 echo -e "${CYAN}${BOLD}Verification & Next Steps:${NC}"
 echo "  1. As soon as developers execute prompts in Antigravity Hub, CLI, or IDE,"

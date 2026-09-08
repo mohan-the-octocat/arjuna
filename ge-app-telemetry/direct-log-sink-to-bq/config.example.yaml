@@ -33,6 +33,14 @@ partition_expiration_days: 90
 # from being persisted to BigQuery. Operational metrics, tokens, and telemetry remain 100% intact.
 exclude_prompt_contents: true
 
+# Optional Security & Compliance Prompt Audit Dataset:
+# If true, provisions an isolated second BigQuery dataset and sink to store raw prompts
+# and model completions (inference_request & inference_response) for compliance auditing.
+enable_prompt_audit: false
+audit_dataset_id: "ge_app_agy_prompts_audit"
+audit_sink_name: "ge-app-agy-prompts-audit-sink"
+audit_retention_days: 30
+
 # FinOps: Set true if customer has the official 50% promotional discount on Gemini Flash models.
 flash_discount_applied: true
 
