@@ -194,7 +194,7 @@ You should see:
 * `businessaicode_googleapis_com_client_telemetry`
 * `businessaicode_googleapis_com_inference_request`
 
-### Step 4: Run a Verification Query
+### Step 4: Run a Verification Query (Telemetry Plane)
 ```bash
 bq query --use_legacy_sql=false '
 SELECT 
@@ -206,6 +206,24 @@ SELECT
   jsonpayload_v1_inferenceresponselog.metadata.totaltokencount AS total_tokens
 FROM 
   `<PROJECT_ID>.ge_app_agy_telemetry.businessaicode_googleapis_com_inference_response`
+ORDER BY timestamp DESC
+LIMIT 5;
+'
+```
+
+### Step 4b: Run a Verification Query (Prompt Audit Plane, if enabled)
+```bash
+bq query --use_legacy_sql=false '
+SELECT 
+  timestamp,
+  labels.user_id,
+  labels.model,
+  labels.client_name,
+  m.author,
+  m.content AS prompt_text
+FROM 
+  `<PROJECT_ID>.ge_app_agy_prompts_audit.businessaicode_googleapis_com_inference_request`,
+  UNNEST(jsonpayload_v1_inferencerequestlog.input.messages) m
 ORDER BY timestamp DESC
 LIMIT 5;
 '
@@ -271,8 +289,11 @@ To remove the dataset, partitioned tables, and logging sink:
 # Interactive confirmation:
 ./cleanup.sh
 
-# Non-interactive force teardown:
+# Non-interactive force teardown (telemetry dataset & sink):
 ./cleanup.sh -p my-ge-project --dataset-id ge_app_agy_telemetry -y -f
+
+# Teardown including isolated prompt audit sink & dataset:
+./cleanup.sh -p my-ge-project --dataset-id ge_app_agy_telemetry --clean-audit -y -f
 ```
 
 ### Via Terraform

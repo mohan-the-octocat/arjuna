@@ -80,14 +80,16 @@ Every log record carries uniform context labels:
 | `labels.client_version` | `STRING` | Client build version | `2.11.0` |
 | `labels.model` | `STRING` | Underlying foundation model | `gemini-3.7-flash` |
 
-### 3.2 Log Stream Payloads
+### 3.2 Log Stream Payloads (Empirically Verified)
 
 #### A. `businessaicode.googleapis.com%2Finference_response`
 Emitted upon completion of every model inference turn.
 * **Protobuf Type (`jsonPayload.@type`):** `type.googleapis.com/google.cloud.businessaicode.logging.v1.InferenceResponseLog`
+* **BigQuery Column Mapping:** `jsonpayload_v1_inferenceresponselog`
 * **Key Fields:**
-  * `jsonPayload.metadata.totalTokenCount` (`STRING`): Total tokens consumed by request and response.
-  * `jsonPayload.contents` (`ARRAY`): Conversational prompt and model response payload (governed by privacy exclusion filter).
+  * `metadata.totalTokenCount` / `metadata.totaltokencount` (`STRING`): Total tokens consumed by request and response context.
+  * `experience` (`STRING`): Model execution tier (e.g., `gemini-3.8-flash-high`, `gemini-2.5-flash-lite`).
+  * `output.candidates` (`ARRAY`): Model-generated completions (governed by privacy exclusion filter; stripped under Zero Data Retention).
 
 #### B. `businessaicode.googleapis.com%2Fclient_telemetry`
 Emitted for developer interaction events and lifecycle milestones.
@@ -107,7 +109,13 @@ Emitted for developer interaction events and lifecycle milestones.
 #### C. `businessaicode.googleapis.com%2Finference_request`
 Emitted when an inference call is initiated.
 * **Protobuf Type (`jsonPayload.@type`):** `type.googleapis.com/google.cloud.businessaicode.logging.v1.InferenceRequestLog`
-* **Key Fields:** Request timestamp, parameter configurations.
+* **BigQuery Column Mapping:** `jsonpayload_v1_inferencerequestlog`
+* **Key Fields:**
+  * `input.messages` (`ARRAY` of records): Conversational turns.
+    * `author` (`STRING`): `USER`, `MODEL`, or `SYSTEM`.
+    * `content` (`STRING`): Raw developer prompt text, instructions, or user queries (captured in isolated prompt audit dataset).
+  * `input.context.files` (`ARRAY`): Local workspace files attached to context.
+  * `experience` (`STRING`): Requested experience tier.
 
 ---
 
