@@ -148,6 +148,72 @@ bq add-iam-policy-binding \
 
 ---
 
+## 5B. Optional: Provision an Isolated Prompt Audit Dataset & Sink
+
+For regulated enterprises requiring raw prompt, reasoning trace, and model code completion auditability for security or compliance review, do **not** store full prompts in the general telemetry dataset.
+
+Because BigQuery IAM permissions inherit hierarchically (`Project -> Dataset -> Table`) and cannot be denied at table-level, anyone with `roles/bigquery.dataViewer` on the telemetry dataset would be able to read sensitive prompt payloads. Instead, deploy an isolated secondary dataset with restricted IAM and a shorter retention window (e.g. 30 days):
+
+### 1. Create Dedicated Audit Dataset (30-day retention)
+```bash
+export AUDIT_DATASET_ID="ge_app_agy_prompts_audit"
+export AUDIT_SINK_NAME="ge-app-agy-prompts-audit-sink"
+export AUDIT_RETENTION_SEC=$(( 30 * 86400 )) # 30 days = 2,592,000s
+
+bq --location="${REGION}" mk \
+  --dataset \
+  --default_partition_expiration="${AUDIT_RETENTION_SEC}" \
+  --description="Restricted audit dataset for Google Antigravity prompt and completion payloads" \
+  "${PROJECT_ID}:${AUDIT_DATASET_ID}"
+```
+
+### 2. Create Audit Log Sink (Without Exclusion Filter)
+```bash
+gcloud logging sinks create "${AUDIT_SINK_NAME}" \
+  "bigquery.googleapis.com/projects/${PROJECT_ID}/datasets/${AUDIT_DATASET_ID}" \
+  --project="${PROJECT_ID}" \
+  --log-filter='resource.type="businessaicode.googleapis.com/BAICInstance" AND logName=~"/inference_response$"' \
+  --use-partitioned-tables \
+  --description="Routes full Antigravity prompt and response payloads to isolated audit dataset"
+```
+
+### 3. Grant Sink Service Account Access to Audit Dataset
+```bash
+AUDIT_WRITER_IDENTITY="$(gcloud logging sinks describe "${AUDIT_SINK_NAME}" \
+  --project="${PROJECT_ID}" \
+  --format='value(writerIdentity)')"
+
+bq add-iam-policy-binding \
+  --project_id="${PROJECT_ID}" \
+  --member="${AUDIT_WRITER_IDENTITY}" \
+  --role="roles/bigquery.dataEditor" \
+  "${AUDIT_DATASET_ID}"
+```
+
+### 4. Restrict Dataset Access (InfoSec / Compliance Only)
+Grant BigQuery data viewing permissions on `${AUDIT_DATASET_ID}` strictly to authorized security and audit personnel, excluding general engineering groups or Looker Studio reporting service accounts.
+
+### 5. Query Raw Prompts for Compliance Review
+Because Cloud Logging flattens protobuf payloads, prompts are stored in `jsonpayload_v1_inferencerequestlog.input.messages`:
+
+```sql
+SELECT 
+  timestamp,
+  labels.user_id,
+  labels.model,
+  labels.client_name,
+  labels.request_id,
+  m.author,
+  m.content AS prompt_text
+FROM 
+  `<YOUR_PROJECT_ID>.ge_app_agy_prompts_audit.businessaicode_googleapis_com_inference_request`,
+  UNNEST(jsonpayload_v1_inferencerequestlog.input.messages) m
+ORDER BY timestamp DESC
+LIMIT 20;
+```
+
+---
+
 ## 6. Step 4: Backfill Historical Logs (Optional)
 
 Cloud Logging sinks only capture logs generated *after* their creation. If you already have active Antigravity users and wish to backfill historical logs (e.g., the last 7 or 30 days):

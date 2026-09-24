@@ -99,8 +99,14 @@ cd ge-app-telemetry/direct-log-sink-to-bq
 # Interactive deployment:
 ./deploy.sh
 
-# Or headless deployment with parameters:
+# Headless deployment (default Zero Data Retention):
 ./deploy.sh -p <PROJECT_ID> -l us-central1 -d ge_app_agy_telemetry -y
+
+# Optional: Enable secondary isolated prompt audit dataset (30-day retention):
+./deploy.sh -p <PROJECT_ID> -l us-central1 -d ge_app_agy_telemetry \
+  --enable-prompt-audit \
+  --audit-dataset-id ge_app_agy_prompts_audit \
+  --audit-retention-days 30 -y
 ```
 
 ### Step 2: Backfill Historical Data (Optional)
@@ -159,6 +165,7 @@ cd ../dashboards/local-web
 
 ## Key Design Principles
 
-1. **Zero Data Retention (ZDR):** The Log Router sink excludes `jsonPayload.contents`, ensuring proprietary code and prompts are never stored in BigQuery.
-2. **Two-Tier Deduplication:** `backfill.sh` deduplicates at ingestion against existing `insertId`s, and all SQL views embed `QUALIFY ROW_NUMBER() OVER(PARTITION BY insertId ORDER BY timestamp DESC) = 1`.
-3. **Seat vs. Consumption Separation:** Flat-rate interactive developer usage ($10/$15 PUPM) is explicitly flagged as `SEAT_INCLUDED` to differentiate from pay-as-you-go headless agent consumption.
+1. **Zero Data Retention (ZDR) by Default:** The primary Log Router sink excludes `jsonPayload.contents`, ensuring proprietary code, prompt text, and model responses are never stored in the general telemetry dataset.
+2. **Dual-Plane Security Isolation:** Because BigQuery IAM permissions inherit downwards (`Project -> Dataset -> Table`) and cannot be denied at table-level, raw prompt/completion audit logs (if required for compliance) are isolated into a separate dataset (`ge_app_agy_prompts_audit`) with restricted IAM and an independent 30-day retention policy.
+3. **Two-Tier Deduplication:** `backfill.sh` deduplicates at ingestion against existing `insertId`s, and all SQL views embed `QUALIFY ROW_NUMBER() OVER(PARTITION BY insertId ORDER BY timestamp DESC) = 1`.
+4. **Seat vs. Consumption Separation:** Flat-rate interactive developer usage ($10/$15 PUPM) is explicitly flagged as `SEAT_INCLUDED` to differentiate from pay-as-you-go headless agent consumption.

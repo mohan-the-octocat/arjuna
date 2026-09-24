@@ -43,6 +43,30 @@ variable "exclude_prompt_contents" {
   default     = true
 }
 
+variable "enable_prompt_audit_dataset" {
+  description = "Whether to deploy an isolated dataset and sink for security auditing of raw prompts and responses."
+  type        = bool
+  default     = false
+}
+
+variable "prompt_audit_dataset_id" {
+  description = "Dedicated BigQuery dataset ID for raw prompt and response audit logs."
+  type        = string
+  default     = "ge_app_agy_prompts_audit"
+}
+
+variable "prompt_audit_sink_name" {
+  description = "Cloud Logging Log Router sink identifier for prompt audit logs."
+  type        = string
+  default     = "ge-app-agy-prompts-audit-sink"
+}
+
+variable "prompt_audit_retention_days" {
+  description = "Daily partition expiration in days for the prompt audit dataset (shorter retention for security)."
+  type        = number
+  default     = 30
+}
+
 variable "reader_service_accounts" {
   description = "Optional list of Service Accounts, Users, or Groups to grant roles/bigquery.dataViewer on the dataset."
   type        = list(string)

@@ -8,6 +8,9 @@ locals {
   
   # Strip 'serviceAccount:' prefix if present for BigQuery dataset access userByEmail
   sink_writer_email = replace(google_logging_project_sink.agy_telemetry_sink.writer_identity, "serviceAccount:", "")
+
+  audit_partition_expiration_ms = var.prompt_audit_retention_days > 0 ? var.prompt_audit_retention_days * 86400 * 1000 : null
+  audit_sink_writer_email       = var.enable_prompt_audit_dataset ? replace(google_logging_project_sink.agy_prompt_audit_sink[0].writer_identity, "serviceAccount:", "") : ""
 }
 
 # ------------------------------------------------------------------------------
@@ -70,4 +73,43 @@ resource "google_bigquery_dataset_access" "readers_access" {
   dataset_id    = google_bigquery_dataset.agy_telemetry.dataset_id
   role          = "roles/bigquery.dataViewer"
   user_by_email = replace(each.value, "serviceAccount:", "")
+}
+
+# ------------------------------------------------------------------------------
+# 5. Optional: Dedicated Security Prompt Audit Dataset & Sink
+# ------------------------------------------------------------------------------
+resource "google_bigquery_dataset" "agy_prompt_audit" {
+  count                       = var.enable_prompt_audit_dataset ? 1 : 0
+  project                     = local.target_project_id
+  dataset_id                  = var.prompt_audit_dataset_id
+  location                    = var.dataset_location
+  description                 = "Google Antigravity Security Audit & Prompt Payloads (Restricted Access)"
+  default_partition_expiration_ms = local.audit_partition_expiration_ms
+  labels                      = var.resource_labels
+
+  lifecycle {
+    prevent_destroy = false
+  }
+}
+
+resource "google_logging_project_sink" "agy_prompt_audit_sink" {
+  count                  = var.enable_prompt_audit_dataset ? 1 : 0
+  name                   = var.prompt_audit_sink_name
+  project                = var.project_id
+  destination            = "bigquery.googleapis.com/projects/${local.target_project_id}/datasets/${google_bigquery_dataset.agy_prompt_audit[0].dataset_id}"
+  filter                 = "resource.type=\"businessaicode.googleapis.com/BAICInstance\" AND (logName=~\"businessaicode.googleapis.com%2Finference_request\" OR logName=~\"businessaicode.googleapis.com%2Finference_response\")"
+  unique_writer_identity = true
+  description            = "Routes Google Antigravity full prompt & response payloads to restricted audit dataset"
+
+  bigquery_options {
+    use_partitioned_tables = true
+  }
+}
+
+resource "google_bigquery_dataset_access" "audit_sink_writer_access" {
+  count         = var.enable_prompt_audit_dataset ? 1 : 0
+  project       = local.target_project_id
+  dataset_id    = google_bigquery_dataset.agy_prompt_audit[0].dataset_id
+  role          = "roles/bigquery.dataEditor"
+  user_by_email = local.audit_sink_writer_email
 }

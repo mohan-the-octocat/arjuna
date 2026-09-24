@@ -42,7 +42,29 @@ Antigravity in Gemini Enterprise emits the following top-level labels on each lo
 * `labels.request_id`: Turn-level execution step ID.
 * `labels.client_name`: Client surface (`antigravity_hub`, `antigravity_cli`, `vscode`).
 * `labels.model`: Model called (`gemini-3.7-flash`).
-* `client_telemetry`: Interaction outcomes (`PROPOSAL_ACCEPTANCE`, `PERMISSION_GRANT` $\rightarrow$ `ACCEPTED`, `REJECTED`, `MODIFIED`).
+* `client_telemetry`: Interaction outcomes (`PROPOSAL_ACCEPTANCE`, `PERMISSION_GRANT` → `ACCEPTED`, `REJECTED`, `MODIFIED`).
+
+---
+
+## Privacy & Security: Dual-Plane Isolation Architecture
+
+Enterprise platform and security teams have two distinct observability requirements:
+1. **Developer Adoption & FinOps Telemetry (Broad Access):** Engineering managers, scrum masters, and FinOps analysts need visibility into DAU, tokens burned, and tool acceptance rates, but must **never** see proprietary developer prompts or code diffs.
+2. **Security & Compliance Auditing (Restricted Access):** Security and compliance officers may require full prompt and completion payloads (`inference_request`, `inference_response`) to investigate security incidents or verify data protection policies.
+
+To enforce the principle of least privilege, `direct-log-sink-to-bq` supports a **Dual-Plane Isolation Architecture**:
+
+* **Primary Telemetry Dataset (`ge_app_agy_telemetry`):**
+  * **Sink:** `ge-app-agy-telemetry-sink`
+  * **Privacy:** Enforces Zero Data Retention (ZDR) exclusion filter (`jsonPayload.contents:*`). Prompts and completions are discarded at the router level.
+  * **Retention:** Default 90 days (configurable up to 365 days).
+  * **Access:** Granted broadly to engineering leads and Looker Studio viewers.
+* **Optional Prompt Audit Dataset (`ge_app_agy_prompts_audit`):**
+  * **Sink:** `ge-app-agy-prompts-audit-sink`
+  * **Ingestion:** Streams `inference_request` and `inference_response` payloads **without** exclusion filters.
+  * **Retention:** Default 30 days (short TTL to minimize data liability).
+  * **Access:** Restricted strictly to designated Security / Compliance officers.
+  * **Deployment Flag:** Pass `--enable-prompt-audit true` to `deploy.sh` or set `enable_prompt_audit_dataset = true` in Terraform.
 
 ---
 
@@ -172,7 +194,7 @@ You should see:
 * `businessaicode_googleapis_com_client_telemetry`
 * `businessaicode_googleapis_com_inference_request`
 
-### Step 4: Run a Verification Query
+### Step 4: Run a Verification Query (Telemetry Plane)
 ```bash
 bq query --use_legacy_sql=false '
 SELECT 
@@ -184,6 +206,24 @@ SELECT
   jsonpayload_v1_inferenceresponselog.metadata.totaltokencount AS total_tokens
 FROM 
   `<PROJECT_ID>.ge_app_agy_telemetry.businessaicode_googleapis_com_inference_response`
+ORDER BY timestamp DESC
+LIMIT 5;
+'
+```
+
+### Step 4b: Run a Verification Query (Prompt Audit Plane, if enabled)
+```bash
+bq query --use_legacy_sql=false '
+SELECT 
+  timestamp,
+  labels.user_id,
+  labels.model,
+  labels.client_name,
+  m.author,
+  m.content AS prompt_text
+FROM 
+  `<PROJECT_ID>.ge_app_agy_prompts_audit.businessaicode_googleapis_com_inference_request`,
+  UNNEST(jsonpayload_v1_inferencerequestlog.input.messages) m
 ORDER BY timestamp DESC
 LIMIT 5;
 '
@@ -249,8 +289,11 @@ To remove the dataset, partitioned tables, and logging sink:
 # Interactive confirmation:
 ./cleanup.sh
 
-# Non-interactive force teardown:
+# Non-interactive force teardown (telemetry dataset & sink):
 ./cleanup.sh -p my-ge-project --dataset-id ge_app_agy_telemetry -y -f
+
+# Teardown including isolated prompt audit sink & dataset:
+./cleanup.sh -p my-ge-project --dataset-id ge_app_agy_telemetry --clean-audit -y -f
 ```
 
 ### Via Terraform

@@ -10,6 +10,12 @@ sink_name                 = "ge-app-agy-telemetry-sink"
 partition_expiration_days = 90
 exclude_prompt_contents   = true               # Privacy/ZDR mode: excludes prompt/code bodies
 
+# Optional Security Prompt Audit Dataset & Sink (Raw prompts & completions)
+enable_prompt_audit_dataset = false
+prompt_audit_dataset_id     = "ge_app_agy_prompts_audit"
+prompt_audit_sink_name      = "ge-app-agy-prompts-audit-sink"
+prompt_audit_retention_days = 30
+
 # Downstream reader identities granted dataViewer on the dataset
 reader_service_accounts = [
   # "serviceAccount:looker-studio@my-project.iam.gserviceaccount.com",

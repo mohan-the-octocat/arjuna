@@ -80,14 +80,16 @@ Every log record carries uniform context labels:
 | `labels.client_version` | `STRING` | Client build version | `2.11.0` |
 | `labels.model` | `STRING` | Underlying foundation model | `gemini-3.7-flash` |
 
-### 3.2 Log Stream Payloads
+### 3.2 Log Stream Payloads (Empirically Verified)
 
 #### A. `businessaicode.googleapis.com%2Finference_response`
 Emitted upon completion of every model inference turn.
 * **Protobuf Type (`jsonPayload.@type`):** `type.googleapis.com/google.cloud.businessaicode.logging.v1.InferenceResponseLog`
+* **BigQuery Column Mapping:** `jsonpayload_v1_inferenceresponselog`
 * **Key Fields:**
-  * `jsonPayload.metadata.totalTokenCount` (`STRING`): Total tokens consumed by request and response.
-  * `jsonPayload.contents` (`ARRAY`): Conversational prompt and model response payload (governed by privacy exclusion filter).
+  * `metadata.totalTokenCount` / `metadata.totaltokencount` (`STRING`): Total tokens consumed by request and response context.
+  * `experience` (`STRING`): Model execution tier (e.g., `gemini-3.8-flash-high`, `gemini-2.5-flash-lite`).
+  * `output.candidates` (`ARRAY`): Model-generated completions (governed by privacy exclusion filter; stripped under Zero Data Retention).
 
 #### B. `businessaicode.googleapis.com%2Fclient_telemetry`
 Emitted for developer interaction events and lifecycle milestones.
@@ -107,7 +109,13 @@ Emitted for developer interaction events and lifecycle milestones.
 #### C. `businessaicode.googleapis.com%2Finference_request`
 Emitted when an inference call is initiated.
 * **Protobuf Type (`jsonPayload.@type`):** `type.googleapis.com/google.cloud.businessaicode.logging.v1.InferenceRequestLog`
-* **Key Fields:** Request timestamp, parameter configurations.
+* **BigQuery Column Mapping:** `jsonpayload_v1_inferencerequestlog`
+* **Key Fields:**
+  * `input.messages` (`ARRAY` of records): Conversational turns.
+    * `author` (`STRING`): `USER`, `MODEL`, or `SYSTEM`.
+    * `content` (`STRING`): Raw developer prompt text, instructions, or user queries (captured in isolated prompt audit dataset).
+  * `input.context.files` (`ARRAY`): Local workspace files attached to context.
+  * `experience` (`STRING`): Requested experience tier.
 
 ---
 
@@ -155,6 +163,33 @@ Emitted when an inference call is initiated.
 3. **Partition Auto-Expiration:** Dataset-level `default_partition_expiration_ms` auto-deletes raw log partitions beyond the retention window (e.g., 90, 180, or 365 days).
 4. **Cold Archive Export (Optional):** Scheduled SQL exports older partitions to a regional Cloud Storage bucket in compressed Parquet format before expiration for multi-year audit compliance.
 
+### 4.4 Dual-Plane Security & Compliance Architecture: Isolated Prompt Audit (Optional)
+
+Enterprises subject to stringent regulatory oversight (e.g., financial services, healthcare, defense) may require auditability of model prompt contents, reasoning steps, and code completions. However, granting general engineering or FinOps analysts access to full prompts creates severe data exposure risks.
+
+To balance auditability with security, `ge-app-telemetry` supports a **dual-plane isolation model**:
+
+```
+                                  Google Cloud Logging
+                                           │
+         ┌─────────────────────────────────┴─────────────────────────────────┐
+         │ (Sink 1: ZDR Exclusion Filter)                                    │ (Sink 2: No Exclusion, Opt-in)
+         ▼                                                                   ▼
+┌─────────────────────────────────────────┐               ┌─────────────────────────────────────────┐
+│ Plane 1: Primary Telemetry Dataset      │               │ Plane 2: Isolated Prompt Audit Dataset  │
+│ `ge_app_agy_telemetry`                  │               │ `ge_app_agy_prompts_audit`              │
+├─────────────────────────────────────────┤               ├─────────────────────────────────────────┤
+│ • Prompts & Code: STRIPPED (ZDR)        │               │ • Prompts & Code: INCLUDED (Raw audit)  │
+│ • Audience: Eng Leaders, FinOps, Looker │               │ • Audience: InfoSec, Compliance Only    │
+│ • Retention: 90 Days (or custom)        │               │ • Retention: 30 Days (Restricted TTL)   │
+│ • Analytics: Views v_ge_app_agy_*       │               │ • Analytics: Ad-hoc security audit      │
+└─────────────────────────────────────────┘               └─────────────────────────────────────────┘
+```
+
+* **Why Dataset-Level Isolation is Mandatory:** In Google Cloud BigQuery, IAM permissions inherit downwards hierarchically (`Project -> Dataset -> Table`). BigQuery does not support negative/deny access control on individual tables within a dataset. Granting a developer or dashboard service account `roles/bigquery.dataViewer` on a dataset grants access to every table within it. Storing raw prompts in a separate table within the same telemetry dataset exposes proprietary code to any user with dashboard access. Isolating prompts into a distinct dataset (`ge_app_agy_prompts_audit`) enforces strict cryptographic and IAM least-privilege boundaries.
+* **Default Behavior (Secure by Default):** Prompt audit is strictly disabled by default (`enable_prompt_audit = false`). Only operational metadata, token counts, and sanitized interaction outcomes are ingested.
+* **Opt-In Provisioning:** When explicitly enabled, a dedicated secondary sink (`ge-app-agy-prompts-audit-sink`) routes `inference_response` logs without the `jsonPayload.contents` exclusion filter into the audit dataset, configured with an independent, shorter retention window (default 30 days).
+
 ---
 
 ## 5. Configuration Schema & Precedence Contract
@@ -172,6 +207,10 @@ All parameters are 100% configurable and share an identical contract across conf
 | `sink_name` | `string` | `ge-app-agy-telemetry-sink` | Cloud Logging Log Router sink identifier. |
 | `partition_expiration_days` | `number` | `90` | Daily partition lifespan in days (`0` = never expire). |
 | `exclude_prompt_contents` | `bool` | `true` | Privacy gate: drops raw prompt/code text bodies from BigQuery. |
+| `enable_prompt_audit` | `bool` | `false` | Whether to provision the secondary isolated audit dataset and sink. |
+| `audit_dataset_id` | `string` | `ge_app_agy_prompts_audit` | Name of the isolated BigQuery dataset for raw prompt/completion audit logs. |
+| `audit_sink_name` | `string` | `ge-app-agy-prompts-audit-sink` | Log Router sink identifier for raw prompt audit. |
+| `audit_retention_days` | `number` | `30` | Daily partition lifespan in days for prompt audit tables (`0` = never expire). |
 | `flash_discount_applied` | `bool` | `true` | Applies 50% promotional rate discount for Gemini 3.5/3.7 Flash models. |
 | `billing_export_table` | `string` | `""` | Optional fully-qualified BigQuery Billing export table for invoice joins. |
 | `resource_labels` | `map` | `{ "managed-by": "antigravity-extensions" }` | GCP resource labels for FinOps tagging. |
@@ -187,6 +226,10 @@ dataset_location: "asia-northeast1"
 sink_name: "ge-app-agy-telemetry-sink"
 partition_expiration_days: 90
 exclude_prompt_contents: true
+enable_prompt_audit: false
+audit_dataset_id: "ge_app_agy_prompts_audit"
+audit_sink_name: "ge-app-agy-prompts-audit-sink"
+audit_retention_days: 30
 flash_discount_applied: true
 billing_export_table: ""
 resource_labels:
