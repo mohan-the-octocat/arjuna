@@ -93,7 +93,7 @@ Options:
   -l, --location REGION         Dataset residency location (default: ${DEFAULT_LOCATION})
   -s, --sink-name NAME          Cloud Logging sink identifier (default: ${DEFAULT_SINK_NAME})
   -r, --retention-days DAYS     Daily partition expiration in days (default: ${DEFAULT_RETENTION_DAYS}, 0 = never)
-  --exclude-prompts BOOL        Exclude raw code/prompts for privacy/ZDR (true/false, default: ${DEFAULT_EXCLUDE_PROMPTS})
+  --exclude-prompts BOOL        Exclude raw code/prompts from primary dataset (true/false, default: ${DEFAULT_EXCLUDE_PROMPTS})
   --enable-prompt-audit BOOL    Deploy isolated dataset for raw prompts/responses (default: ${DEFAULT_ENABLE_PROMPT_AUDIT})
   --audit-dataset-id ID         Dedicated BigQuery dataset ID for prompt audit (default: ${DEFAULT_AUDIT_DATASET_ID})
   --audit-sink-name NAME        Cloud Logging sink identifier for prompt audit (default: ${DEFAULT_AUDIT_SINK_NAME})
@@ -269,18 +269,52 @@ if [[ "$HEADLESS" != "true" ]]; then
   read -r -p "Partition Expiration Days (0=never) [${PARTITION_EXPIRATION_DAYS}]: " input_ret
   PARTITION_EXPIRATION_DAYS="${input_ret:-$PARTITION_EXPIRATION_DAYS}"
 
-  read -r -p "Exclude Prompts/Code (Privacy Mode) [${EXCLUDE_PROMPT_CONTENTS}]: " input_priv
-  EXCLUDE_PROMPT_CONTENTS="${input_priv:-$EXCLUDE_PROMPT_CONTENTS}"
+  # Prompt Logging Selection
+  include_prompts="false"
+  if [[ "$EXCLUDE_PROMPT_CONTENTS" == "false" || "$ENABLE_PROMPT_AUDIT" == "true" ]]; then
+    include_prompts="true"
+  fi
 
-  read -r -p "Deploy isolated Security Prompt Audit Dataset? (y/N) [${ENABLE_PROMPT_AUDIT}]: " input_audit
-  if [[ "$input_audit" =~ ^[Yy]$ ]]; then
-    ENABLE_PROMPT_AUDIT="true"
-    read -r -p "Audit Dataset ID [${AUDIT_DATASET_ID}]: " input_audit_ds
-    AUDIT_DATASET_ID="${input_audit_ds:-$AUDIT_DATASET_ID}"
-    read -r -p "Audit Partition Lifespan in days [${AUDIT_RETENTION_DAYS}]: " input_audit_ret
-    AUDIT_RETENTION_DAYS="${input_audit_ret:-$AUDIT_RETENTION_DAYS}"
-  elif [[ -n "$input_audit" ]]; then
+  read -r -p "Include prompts, requests, responses in the logs? (y/N) [${include_prompts}]: " input_include
+  if [[ -n "$input_include" ]]; then
+    if [[ "$input_include" =~ ^[Yy](es)?$ || "$input_include" == "true" ]]; then
+      include_prompts="true"
+    else
+      include_prompts="false"
+    fi
+  fi
+
+  if [[ "$include_prompts" == "false" ]]; then
+    # Prompts, requests, responses are excluded; separate dataset question does not arise
+    EXCLUDE_PROMPT_CONTENTS="true"
     ENABLE_PROMPT_AUDIT="false"
+  else
+    # User chose to include prompts: determine whether to store in a separate dataset
+    separate_dataset="true"
+    if [[ "$ENABLE_PROMPT_AUDIT" == "false" && "$EXCLUDE_PROMPT_CONTENTS" == "false" ]]; then
+      separate_dataset="false"
+    fi
+
+    read -r -p "Should prompts, requests, responses be stored in a separate dataset? (Y/n) [${separate_dataset}]: " input_separate
+    if [[ -n "$input_separate" ]]; then
+      if [[ "$input_separate" =~ ^[Nn]o?$ || "$input_separate" == "false" ]]; then
+        separate_dataset="false"
+      else
+        separate_dataset="true"
+      fi
+    fi
+
+    if [[ "$separate_dataset" == "true" ]]; then
+      EXCLUDE_PROMPT_CONTENTS="true"
+      ENABLE_PROMPT_AUDIT="true"
+      read -r -p "Separate dataset name to store prompts, requests, responses [${AUDIT_DATASET_ID}]: " input_audit_ds
+      AUDIT_DATASET_ID="${input_audit_ds:-$AUDIT_DATASET_ID}"
+      read -r -p "Separate dataset partition lifespan in days (0=never) [${AUDIT_RETENTION_DAYS}]: " input_audit_ret
+      AUDIT_RETENTION_DAYS="${input_audit_ret:-$AUDIT_RETENTION_DAYS}"
+    else
+      EXCLUDE_PROMPT_CONTENTS="false"
+      ENABLE_PROMPT_AUDIT="false"
+    fi
   fi
 
   echo ""
@@ -307,8 +341,13 @@ echo -e "  Destination Project: ${BOLD}${DEST_PROJECT_ID}${NC}"
 echo -e "  BigQuery Dataset   : ${BOLD}${DATASET_ID}${NC} (Region: ${DATASET_LOCATION})"
 echo -e "  Sink Name          : ${BOLD}${SINK_NAME}${NC}"
 echo -e "  Partition Lifespan : ${BOLD}${PARTITION_EXPIRATION_DAYS} days${NC}"
-echo -e "  Privacy Exclusion  : ${BOLD}${EXCLUDE_PROMPT_CONTENTS}${NC} (Exclude prompt bodies)"
-echo -e "  Prompt Audit Mart  : ${BOLD}${ENABLE_PROMPT_AUDIT}${NC} (Dataset: ${AUDIT_DATASET_ID}, TTL: ${AUDIT_RETENTION_DAYS}d)"
+if [[ "$ENABLE_PROMPT_AUDIT" == "true" ]]; then
+  echo -e "  Prompts/Responses  : ${BOLD}Stored in separate dataset${NC} (${AUDIT_DATASET_ID}, TTL: ${AUDIT_RETENTION_DAYS}d)"
+elif [[ "$EXCLUDE_PROMPT_CONTENTS" == "false" ]]; then
+  echo -e "  Prompts/Responses  : ${BOLD}Stored in primary dataset${NC} (${DATASET_ID})"
+else
+  echo -e "  Prompts/Responses  : ${BOLD}Excluded from logs${NC}"
+fi
 echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
 
 if [[ "$HEADLESS" != "true" ]]; then
@@ -384,7 +423,7 @@ CREATE_OR_UPDATE_CMD+=(
 
 # Apply privacy exclusion filter if enabled
 if [[ "$EXCLUDE_PROMPT_CONTENTS" == "true" ]]; then
-  log_info "Applying Zero Data Retention (ZDR) privacy filter: excluding prompt/code text..."
+  log_info "Applying privacy filter: excluding prompt/code text..."
   EXCLUSION_FILTER='logName=~"businessaicode.googleapis.com%2Finference_response" AND jsonPayload.contents:*'
   if [[ -n "$SINK_EXISTS" ]]; then
     EXCLUSION_EXISTS=$(gcloud logging sinks describe "${SINK_NAME}" --project="${PROJECT_ID}" --format="value(exclusions[].name)" "${GCLOUD_EXTRA_FLAGS[@]}" 2>/dev/null | grep -w "exclude-prompt-contents" || true)
