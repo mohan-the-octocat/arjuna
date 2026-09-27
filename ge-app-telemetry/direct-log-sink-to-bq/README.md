@@ -124,6 +124,44 @@ cp config.example.yaml config.yaml
   -y
 ```
 
+#### 4. Full Command with All Optional Arguments
+For complete declarative control, all optional parameters can be explicitly supplied:
+```bash
+./deploy.sh \
+  --project-id "my-ge-project" \
+  --dest-project-id "my-ge-project" \
+  --dataset-id "ge_app_agy_telemetry" \
+  --location "us-central1" \
+  --sink-name "ge-app-agy-telemetry-sink" \
+  --retention-days 90 \
+  --exclude-prompts true \
+  --enable-prompt-audit true \
+  --audit-dataset-id "ge_app_agy_prompts_audit" \
+  --audit-sink-name "ge-app-agy-prompts-audit-sink" \
+  --audit-retention-days 30 \
+  --headless
+```
+
+#### CLI Flag Reference
+
+| Flag | Short | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--project-id ID` | `-p` | Active `gcloud` project | Source GCP Project ID where Antigravity / Gemini Enterprise is active. |
+| `--dest-project-id ID` | `-d` | Same as `project-id` | Destination GCP Project ID hosting BigQuery (for multi-project telemetry). |
+| `--dataset-id ID` | | `ge_app_agy_telemetry` | Primary BigQuery telemetry dataset identifier. |
+| `--location REGION` | `-l` | `us-central1` | Regional or multi-regional residency location for BigQuery datasets. |
+| `--sink-name NAME` | `-s` | `ge-app-agy-telemetry-sink` | Cloud Logging Log Router Sink name. |
+| `--retention-days DAYS` | `-r` | `90` | Daily partition lifespan in days (`0` = never expire). |
+| `--exclude-prompts BOOL` | | `true` | Exclude raw prompt text and code diffs from the primary dataset. |
+| `--enable-prompt-audit BOOL` | | `false` | Deploy secondary isolated dataset for raw prompts/responses (SecOps). |
+| `--audit-dataset-id ID` | | `ge_app_agy_prompts_audit` | Dedicated BigQuery dataset ID for raw prompt auditing. |
+| `--audit-sink-name NAME` | | `ge-app-agy-prompts-audit-sink` | Cloud Logging sink identifier for prompt auditing. |
+| `--audit-retention-days DAYS`| | `30` | Partition lifespan in days for the prompt audit dataset. |
+| `--impersonate-sa EMAIL` | | *(None)* | Service Account to impersonate during deployment. |
+| `--config FILE` | `-c` | *(None)* | Path to YAML/JSON configuration file. |
+| `--headless` / `--yes` | `-y` | `false` | Run non-interactively without prompt pauses. |
+| `--help` | `-h` | | Display help message and exit. |
+
 ---
 
 ### Method B: Production Terraform Module (`terraform/`)
@@ -155,7 +193,7 @@ For enterprise platform teams managing infrastructure via GitOps:
 
 ---
 
-## Privacy and Zero Data Retention (ZDR)
+## Privacy and Prompt Exclusion Mode
 
 By default, `exclude_prompt_contents = true` is enabled.
 
