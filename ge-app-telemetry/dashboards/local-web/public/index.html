@@ -119,6 +119,37 @@
       cursor: not-allowed;
     }
 
+    .user-filter {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+      max-width: 280px;
+    }
+
+    .filter-banner {
+      display: none;
+      background: var(--blue-tint);
+      border: 1px solid var(--blue-border);
+      color: var(--blue-primary);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+
+    .filter-banner a { color: var(--blue-primary); font-weight: 600; cursor: pointer; margin-left: 8px; }
+
+    #user-table tbody tr { cursor: pointer; }
+    #user-table tbody tr.selected td { background-color: var(--blue-tint); }
+    .share-bar { height: 6px; background: var(--purple-primary); border-radius: 3px; }
+    .share-cell { min-width: 110px; }
+    .muted { color: var(--text-muted); font-size: 12px; }
+
     /* KPI Row */
     .kpi-row {
       display: grid;
@@ -300,11 +331,19 @@
         </div>
       </div>
       <div class="header-actions">
+        <select class="user-filter" id="user-filter" onchange="applyFilter()" title="Filter all metrics by user">
+          <option value="">All users</option>
+        </select>
         <button class="btn-refresh" id="refresh-btn" onclick="triggerRefresh()">
           <span>↻</span> Refresh from BigQuery
         </button>
       </div>
     </header>
+
+    <div class="filter-banner" id="filter-banner">
+      Showing metrics for <strong id="filter-banner-user"></strong>
+      <a onclick="selectUser('')">× Show all users</a>
+    </div>
 
     <!-- Top KPI Cards -->
     <section class="kpi-row">
@@ -429,10 +468,40 @@
       </div>
     </section>
 
+    <!-- Per-User Insights -->
+    <section class="table-card">
+      <div class="chart-header">
+        <div class="chart-title">User Insights</div>
+        <div class="chart-desc">Per-developer rollup for the full period · click a row to filter the dashboard</div>
+      </div>
+      <div class="table-container">
+        <table id="user-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Active Days</th>
+              <th>Trajectories</th>
+              <th>Inferences</th>
+              <th>Inf / Trajectory</th>
+              <th>Total Tokens</th>
+              <th>Token Share</th>
+              <th>Avg Tokens / Turn</th>
+              <th>Resolution Rate</th>
+              <th>Top Model</th>
+              <th>Last Active</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="11" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- Detailed Attribution Table -->
     <section class="table-card">
       <div class="chart-header">
-        <div class="chart-title">Model & Tier Cost Attribution</div>
+        <div class="chart-title">Model &amp; Tier Cost Attribution</div>
         <div class="chart-desc">Per-model workload metrics and pricing classifications</div>
       </div>
       <div class="table-container">
@@ -440,6 +509,7 @@
           <thead>
             <tr>
               <th>Date</th>
+              <th>User</th>
               <th>Model</th>
               <th>Inferences</th>
               <th>Trajectories</th>
@@ -450,7 +520,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td colspan="8" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
+            <tr><td colspan="9" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
           </tbody>
         </table>
       </div>
@@ -467,13 +537,18 @@
 
   <script>
     let charts = {};
+    let rawData = null;
+
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const shortUser = u => String(u || 'unknown').split('@')[0];
 
     async function loadData() {
       try {
         const res = await fetch('/api/data');
         if (!res.ok) throw new Error('Failed to load telemetry data');
         const data = await res.json();
-        renderDashboard(data);
+        setData(data);
       } catch (err) {
         console.error(err);
         document.getElementById('connection-status').innerText = 'Data Error';
@@ -487,15 +562,65 @@
       btn.innerHTML = '<span>⏳</span> Refreshing...';
       try {
         const res = await fetch('/api/refresh', { method: 'POST' });
-        if (!res.ok) throw new Error('Refresh failed');
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const details = String(body.details || '').split('\n')
+            .filter(l => l && !l.startsWith('Command failed')).slice(0, 4).join('\n');
+          throw new Error(details || body.error || `HTTP ${res.status}`);
+        }
         const data = await res.json();
-        renderDashboard(data);
+        setData(data);
       } catch (err) {
         alert('Failed to refresh data: ' + err.message);
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<span>↻</span> Refresh from BigQuery';
       }
+    }
+
+    // Store the unfiltered bundle and (re)build the user dropdown.
+    function setData(data) {
+      rawData = data;
+      const users = [...new Set([
+        ...(data.user_summary || []), ...(data.adoption || []),
+        ...(data.trust_quality || []), ...(data.token_economics || [])
+      ].map(r => r.user_email).filter(Boolean))].sort();
+
+      const sel = document.getElementById('user-filter');
+      const wanted = sel.value || new URLSearchParams(location.search).get('user') || '';
+      sel.innerHTML = `<option value="">All users (${users.length})</option>` +
+        users.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+      sel.value = users.includes(wanted) ? wanted : '';
+      applyFilter();
+    }
+
+    function selectUser(u) {
+      document.getElementById('user-filter').value = u;
+      applyFilter();
+    }
+
+    // Filter every dataset by the selected user and redraw.
+    function applyFilter() {
+      if (!rawData) return;
+      const u = document.getElementById('user-filter').value;
+      const f = rows => (rows || []).filter(r => !u || r.user_email === u);
+
+      const url = new URL(location.href);
+      u ? url.searchParams.set('user', u) : url.searchParams.delete('user');
+      history.replaceState(null, '', url);
+
+      document.getElementById('filter-banner').style.display = u ? 'block' : 'none';
+      document.getElementById('filter-banner-user').innerText = u;
+
+      renderDashboard({
+        ...rawData,
+        adoption: f(rawData.adoption),
+        trust_quality: f(rawData.trust_quality),
+        token_economics: f(rawData.token_economics),
+        user_summary: f(rawData.user_summary),
+      });
+      // The user table always lists everyone; the selected row is highlighted.
+      renderUserTable(rawData.user_summary || [], u);
     }
 
     function renderDashboard(data) {
@@ -507,22 +632,33 @@
       const adoption = data.adoption || [];
       const trust = data.trust_quality || [];
       const econ = data.token_economics || [];
+      const users = data.user_summary || [];
+      const num = v => parseInt(v) || 0;
 
       // 2. Compute KPIs
       const distinctUsers = new Set(adoption.map(r => r.user_email)).size;
-      const totalInferences = adoption.reduce((s, r) => s + (parseInt(r.total_inferences) || 0), 0);
-      const totalTrajectories = adoption.reduce((s, r) => s + (parseInt(r.active_trajectories) || 0), 0);
+      const totalInferences = adoption.reduce((s, r) => s + num(r.total_inferences), 0);
+      // Distinct trajectories: prefer the per-user rollup (a trajectory belongs to one
+      // user, so summing across users is exact). Summing view rows double-counts
+      // trajectories that span days or models.
+      const totalTrajectories = users.length
+        ? users.reduce((s, r) => s + num(r.trajectories), 0)
+        : adoption.reduce((s, r) => s + num(r.active_trajectories), 0);
       const avgInfPerTask = totalTrajectories > 0 ? (totalInferences / totalTrajectories).toFixed(1) : '0';
 
-      const resolvedTraj = trust.reduce((s, r) => s + (parseInt(r.resolved_trajectories) || 0), 0);
-      const totalTrajTrust = trust.reduce((s, r) => s + (parseInt(r.total_trajectories) || 0), 0);
-      const resolutionRate = totalTrajTrust > 0 ? ((resolvedTraj / totalTrajTrust) * 100).toFixed(1) : '100';
+      const resolvedTraj = users.length
+        ? users.reduce((s, r) => s + num(r.resolved_trajectories), 0)
+        : trust.reduce((s, r) => s + num(r.resolved_trajectories), 0);
+      const totalTrajTrust = users.length
+        ? users.reduce((s, r) => s + num(r.client_trajectories), 0)
+        : trust.reduce((s, r) => s + num(r.total_trajectories), 0);
+      const resolutionRate = totalTrajTrust > 0 ? ((resolvedTraj / totalTrajTrust) * 100).toFixed(1) : '--';
 
-      const permAccepted = trust.reduce((s, r) => s + (parseInt(r.permission_grants_accepted) || 0), 0);
-      const permTotal = trust.reduce((s, r) => s + (parseInt(r.permission_requests_total) || 0), 0);
-      const permRate = permTotal > 0 ? ((permAccepted / permTotal) * 100).toFixed(1) : '100';
+      const permAccepted = trust.reduce((s, r) => s + num(r.permission_grants_accepted), 0);
+      const permTotal = trust.reduce((s, r) => s + num(r.permission_requests_total), 0);
+      const permRate = permTotal > 0 ? ((permAccepted / permTotal) * 100).toFixed(1) : '--';
 
-      const totalTokens = econ.reduce((s, r) => s + (parseInt(r.total_tokens) || 0), 0);
+      const totalTokens = econ.reduce((s, r) => s + num(r.total_tokens), 0);
       const totalListCost = econ.reduce((s, r) => s + (parseFloat(r.estimated_cost_usd_list) || 0), 0);
       const totalDiscCost = econ.reduce((s, r) => s + (parseFloat(r.estimated_cost_usd_discounted) || 0), 0);
       const avgTokensPerTurn = totalInferences > 0 ? Math.round(totalTokens / totalInferences / 1000) : 0;
@@ -545,6 +681,36 @@
 
       // 4. Render Table
       renderTable(econ);
+    }
+
+    function renderUserTable(users, selected) {
+      const tbody = document.querySelector('#user-table tbody');
+      if (!users.length) {
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align: center;">No per-user data. Run fetch_data.sh to populate.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = users.map(r => {
+        const share = (parseFloat(r.token_share) || 0) * 100;
+        const res = r.resolution_rate == null ? '--' : ((parseFloat(r.resolution_rate) || 0) * 100).toFixed(1) + '%';
+        const last = r.last_seen ? new Date(String(r.last_seen).replace(' ', 'T').replace(/ UTC$/, 'Z')).toLocaleDateString() : '--';
+        return `
+        <tr class="${r.user_email === selected ? 'selected' : ''}" data-user="${esc(r.user_email)}">
+          <td><strong>${esc(shortUser(r.user_email))}</strong><div class="muted">${esc(r.user_email)}</div></td>
+          <td>${parseInt(r.active_days) || 0}</td>
+          <td>${(parseInt(r.trajectories) || 0).toLocaleString()}</td>
+          <td>${(parseInt(r.inferences) || 0).toLocaleString()}</td>
+          <td>${r.inferences_per_trajectory ?? '--'}</td>
+          <td>${(parseInt(r.total_tokens) || 0).toLocaleString()}</td>
+          <td class="share-cell">${share.toFixed(1)}%<div class="share-bar" style="width:${Math.max(share, 1)}%"></div></td>
+          <td>${(parseInt(r.avg_tokens_per_inference) || 0).toLocaleString()}</td>
+          <td>${res}</td>
+          <td><code>${esc(r.top_model || '--')}</code><div class="muted">${parseInt(r.models_used) || 0} model(s)</div></td>
+          <td>${last}</td>
+        </tr>`;
+      }).join('');
+      tbody.querySelectorAll('tr[data-user]').forEach(tr => {
+        tr.onclick = () => selectUser(tr.dataset.user === selected ? '' : tr.dataset.user);
+      });
     }
 
     function renderAdoptionCharts(adoption) {
@@ -707,14 +873,15 @@
     function renderTable(econ) {
       const tbody = document.querySelector('#attribution-table tbody');
       if (!econ || econ.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No records found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center;">No records found.</td></tr>';
         return;
       }
 
       tbody.innerHTML = econ.map(r => `
         <tr>
           <td><strong>${r.event_date}</strong></td>
-          <td><code>${r.model}</code></td>
+          <td title="${esc(r.user_email)}">${esc(shortUser(r.user_email))}</td>
+          <td><code>${esc(r.model)}</code></td>
           <td>${parseInt(r.total_inferences).toLocaleString()}</td>
           <td>${r.active_trajectories || 0}</td>
           <td>${parseInt(r.total_tokens).toLocaleString()}</td>
