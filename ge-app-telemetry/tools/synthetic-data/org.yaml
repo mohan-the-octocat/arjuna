@@ -1,0 +1,160 @@
+# Synthetic Antigravity telemetry: organization and scenario config.
+# Read by generate.py. Counts are for --users 200 and scale linearly.
+# Values marked "profile" were taken from the stratosphere-461622 reference
+# deployment; everything else is an assumption for demo purposes.
+
+company:
+  name: Cymbal
+  domain: cymbalgroup.com
+  client_name: antigravity_hub          # profile: only client seen
+
+# Fake GCP projects. resource_container carries the project NUMBER and
+# logName carries the project ID, as in real sink rows.
+gcp_projects:
+  cymbal-checkout-dev:   "418203957712"
+  cymbal-storefront-dev: "418203958806"
+  cymbal-mobile-dev:     "418203960147"
+  cymbal-platform-ops:   "418203961533"
+  cymbal-data-analytics: "418203962990"
+  cymbal-eng-shared:     "418203964271"
+
+timezones:
+  IST: 5.5
+  PT: -7.0          # PDT for Jul-Sep
+
+holidays:            # local dates with ~10% of normal activity
+  IST: ["2026-08-15", "2026-09-14"]
+  PT:  ["2026-07-03", "2026-09-07"]
+
+# Archetypes drive the PRD expertise score (active days, trajectories/week,
+# steps per human turn, advanced features). Tuned so the PRD default bands
+# land users in the intended tier.
+archetypes:
+  expert:       {p_active: 0.85, traj_per_day: 4.5, steps_per_turn: 16, followup_p: 0.75, features: [mention, slash, skill, subagent, switch], feature_p: {mention: 0.35, slash: 0.20, skill: 0.15, subagent: 0.12, switch: 0.15}}
+  advanced:     {p_active: 0.65, traj_per_day: 2.6, steps_per_turn: 6,  followup_p: 0.60, features: [mention, slash_or_skill], feature_p: {mention: 0.25, slash: 0.06, skill: 0.06, switch: 0.0}}
+  intermediate: {p_active: 0.42, traj_per_day: 1.6, steps_per_turn: 3.5, followup_p: 0.50, features: [mention_70], feature_p: {mention: 0.12}}
+  beginner:     {p_active: 0.25, traj_per_day: 1.15, steps_per_turn: 2, followup_p: 0.40, features: [mention_20], feature_p: {mention: 0.04}}
+  sparse:       {p_active: 0.04, traj_per_day: 1.0, steps_per_turn: 2, followup_p: 0.30, features: [], feature_p: {}}
+
+# Role mix. tiers = share of users per archetype (expert, advanced,
+# intermediate, beginner, sparse). categories = activity weights.
+roles:
+  swe_backend:
+    count: 45
+    title: Software Engineer, Backend
+    projects: {cymbal-checkout-dev: 0.8, cymbal-data-analytics: 0.1, cymbal-platform-ops: 0.1}
+    tiers: [0.16, 0.27, 0.30, 0.24, 0.03]
+    categories: {build_feature: 22, debug_fix: 24, refactor_migrate: 14, understand_code: 12, test_verify: 10, devops_infra: 5, data_analysis: 3, research_docs: 4, ui_frontend: 1, other: 5}
+  swe_frontend:
+    count: 30
+    title: Software Engineer, Frontend
+    projects: {cymbal-storefront-dev: 0.9, cymbal-eng-shared: 0.1}
+    tiers: [0.10, 0.23, 0.33, 0.30, 0.04]
+    categories: {ui_frontend: 30, build_feature: 15, debug_fix: 20, refactor_migrate: 10, understand_code: 8, test_verify: 8, research_docs: 3, other: 6}
+  swe_mobile:
+    count: 15
+    title: Software Engineer, Mobile
+    projects: {cymbal-mobile-dev: 1.0}
+    tiers: [0.07, 0.20, 0.33, 0.33, 0.07]
+    categories: {ui_frontend: 25, build_feature: 20, debug_fix: 22, refactor_migrate: 10, understand_code: 8, test_verify: 8, other: 7}
+  swe_platform:
+    count: 20
+    title: Software Engineer, Platform
+    projects: {cymbal-platform-ops: 0.85, cymbal-checkout-dev: 0.15}
+    tiers: [0.20, 0.30, 0.25, 0.22, 0.03]
+    categories: {devops_infra: 32, debug_fix: 20, build_feature: 12, refactor_migrate: 12, understand_code: 8, research_docs: 6, test_verify: 4, other: 6}
+  qa:
+    count: 20
+    title: QA / SDET
+    projects: {cymbal-eng-shared: 0.6, cymbal-storefront-dev: 0.2, cymbal-mobile-dev: 0.2}
+    tiers: [0.05, 0.20, 0.30, 0.40, 0.05]
+    categories: {test_verify: 45, debug_fix: 20, understand_code: 12, build_feature: 4, research_docs: 7, devops_infra: 3, other: 9}
+  sre:
+    count: 15
+    title: Site Reliability Engineer
+    projects: {cymbal-platform-ops: 1.0}
+    tiers: [0.13, 0.27, 0.27, 0.30, 0.03]
+    categories: {devops_infra: 38, debug_fix: 25, understand_code: 10, research_docs: 10, build_feature: 4, data_analysis: 5, other: 8}
+  pm:
+    count: 15
+    title: Product Manager
+    projects: {cymbal-eng-shared: 0.7, cymbal-data-analytics: 0.3}
+    tiers: [0.07, 0.13, 0.27, 0.46, 0.07]
+    categories: {research_docs: 42, data_analysis: 18, understand_code: 12, ui_frontend: 6, build_feature: 7, other: 15}
+  ux:
+    count: 10
+    title: UX Designer / Researcher
+    projects: {cymbal-storefront-dev: 0.7, cymbal-mobile-dev: 0.3}
+    tiers: [0.0, 0.10, 0.30, 0.50, 0.10]
+    categories: {ui_frontend: 55, research_docs: 20, understand_code: 7, build_feature: 4, other: 14}
+  data:
+    count: 12
+    title: Data Engineer / Analyst
+    projects: {cymbal-data-analytics: 1.0}
+    tiers: [0.08, 0.25, 0.33, 0.30, 0.04]
+    categories: {data_analysis: 52, debug_fix: 14, understand_code: 8, build_feature: 6, research_docs: 8, refactor_migrate: 4, other: 8}
+  em:
+    count: 10
+    title: Engineering Manager
+    projects: {cymbal-eng-shared: 0.6, cymbal-checkout-dev: 0.2, cymbal-platform-ops: 0.2}
+    tiers: [0.10, 0.10, 0.20, 0.50, 0.10]
+    categories: {research_docs: 30, understand_code: 28, data_analysis: 12, debug_fix: 6, build_feature: 6, other: 18}
+  other:
+    count: 8
+    title: Tech Writer / Security / TPM
+    projects: {cymbal-eng-shared: 1.0}
+    tiers: [0.0, 0.12, 0.25, 0.50, 0.13]
+    categories: {research_docs: 45, understand_code: 25, devops_infra: 5, data_analysis: 5, other: 20}
+
+pt_share: 0.15            # share of users in the Seattle (PT) team
+
+rollout:
+  pilot_share: 0.15        # of users; onboard in the first 10 days
+  pilot_roles: [swe_backend, swe_platform, swe_frontend, sre, qa, pm]
+  rollout_start_offset: 31 # days after start (1 Aug for a 1 Jul start)
+  rollout_span_days: 20
+  late_joiner_share: 0.10  # of non-pilot users; onboard during the last 30 days
+  pilot_churn_share: 0.35  # of pilot users; go quiet within ~7 weeks
+  rollout_churn_share: 0.06
+
+# Client releases (profile versions; dates assumed). Users upgrade after a
+# per-user lag; laggards stay on the version they had in mid-July.
+client_releases:
+  - {version: "2.10.0", date: "2026-06-20", breakdown: false, aux_rate: 0.03}
+  - {version: "2.11.0", date: "2026-07-14", breakdown: false, aux_rate: 0.03}
+  - {version: "2.12.2", date: "2026-08-04", breakdown: true,  aux_rate: 0.03}
+  - {version: "2.13.0", date: "2026-08-18", breakdown: true,  aux_rate: 0.03}
+  - {version: "2.15.1", date: "2026-09-01", breakdown: true,  aux_rate: 0.03}
+  - {version: "2.16.0", date: "2026-09-15", breakdown: true,  aux_rate: 0.11}   # overhead regression
+  - {version: "2.17.0", date: "2026-09-26", breakdown: true,  aux_rate: 0.03}
+upgrade_lag:
+  fast:    {share: 0.30, days: [0, 2]}
+  normal:  {share: 0.60, days: [3, 10]}
+  laggard: {share: 0.10}
+
+# Models. labels.model / experience pairs (profile), plus gemini-3.5-flash as
+# the deprecated model (assumed; not seen in the reference data).
+models:
+  current_ga: "2026-09-02"            # gemini-3.8-flash becomes available
+  min_client_for_current: "2.15.1"
+  deprecated_user_share: 0.04
+  tier_pref: {high: 0.65, medium: 0.28, low: 0.07}
+  rework:                             # proposal outcome probabilities
+    default:                 [0.80, 0.13, 0.07]
+    gemini-3.7-flash-medium: [0.58, 0.27, 0.15]   # high-rework story
+    gemini-3.5-flash-high:   [0.62, 0.24, 0.14]
+    gemini-3.5-flash-medium: [0.60, 0.25, 0.15]
+
+aux:
+  model: gemini-3.5-flash-lite        # profile
+  worktree_p: 0.25                    # per trajectory
+  prompt_echo_p: 0.30                 # per human turn
+  compaction_tokens: 190000
+  image_p_ui: 0.03                    # per UI trajectory
+
+quota_type: null                      # set from the reference profile
+
+runaways: 3
+sensitive:
+  human_turn_p: 0.015
+  terminal_check_p: 0.03

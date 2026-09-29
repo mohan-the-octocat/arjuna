@@ -1,0 +1,18 @@
+[
+  {"name": "trajectory_id", "type": "STRING"},
+  {"name": "user_email", "type": "STRING"},
+  {"name": "role", "type": "STRING"},
+  {"name": "archetype", "type": "STRING"},
+  {"name": "category", "type": "STRING"},
+  {"name": "prompt_id", "type": "STRING"},
+  {"name": "human_turns", "type": "INTEGER"},
+  {"name": "agent_steps", "type": "INTEGER"},
+  {"name": "experience", "type": "STRING"},
+  {"name": "client_version", "type": "STRING"},
+  {"name": "project", "type": "STRING"},
+  {"name": "customization", "type": "STRING", "mode": "REPEATED"},
+  {"name": "features", "type": "STRING", "mode": "REPEATED"},
+  {"name": "resolved", "type": "BOOLEAN"},
+  {"name": "runaway", "type": "BOOLEAN"},
+  {"name": "started_at", "type": "TIMESTAMP"}
+]

@@ -1,0 +1,475 @@
+[
+  {
+    "name": "logName",
+    "type": "STRING"
+  },
+  {
+    "fields": [
+      {
+        "name": "type",
+        "type": "STRING"
+      },
+      {
+        "fields": [
+          {
+            "name": "resource_container",
+            "type": "STRING"
+          },
+          {
+            "name": "location",
+            "type": "STRING"
+          }
+        ],
+        "name": "labels",
+        "type": "RECORD"
+      }
+    ],
+    "name": "resource",
+    "type": "RECORD"
+  },
+  {
+    "name": "textPayload",
+    "type": "STRING"
+  },
+  {
+    "fields": [
+      {
+        "name": "_type",
+        "type": "STRING"
+      },
+      {
+        "fields": [
+          {
+            "name": "candidatestokencount",
+            "type": "STRING"
+          },
+          {
+            "name": "prompttokencount",
+            "type": "STRING"
+          },
+          {
+            "name": "totaltokencount",
+            "type": "STRING"
+          },
+          {
+            "name": "thoughtstokencount",
+            "type": "STRING"
+          },
+          {
+            "name": "cachedcontenttokencount",
+            "type": "STRING"
+          },
+          {
+            "name": "quotatype",
+            "type": "STRING"
+          }
+        ],
+        "name": "metadata",
+        "type": "RECORD"
+      },
+      {
+        "name": "experience",
+        "type": "STRING"
+      },
+      {
+        "fields": [
+          {
+            "fields": [
+              {
+                "fields": [
+                  {
+                    "name": "content",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "author",
+                    "type": "STRING"
+                  }
+                ],
+                "mode": "REPEATED",
+                "name": "messages",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "candidates",
+            "type": "RECORD"
+          }
+        ],
+        "name": "output",
+        "type": "RECORD"
+      }
+    ],
+    "name": "jsonpayload_v1_inferenceresponselog",
+    "type": "RECORD"
+  },
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP"
+  },
+  {
+    "name": "receiveTimestamp",
+    "type": "TIMESTAMP"
+  },
+  {
+    "name": "severity",
+    "type": "STRING"
+  },
+  {
+    "name": "insertId",
+    "type": "STRING"
+  },
+  {
+    "fields": [
+      {
+        "name": "requestMethod",
+        "type": "STRING"
+      },
+      {
+        "name": "requestUrl",
+        "type": "STRING"
+      },
+      {
+        "name": "requestSize",
+        "type": "INTEGER"
+      },
+      {
+        "name": "status",
+        "type": "INTEGER"
+      },
+      {
+        "name": "responseSize",
+        "type": "INTEGER"
+      },
+      {
+        "name": "userAgent",
+        "type": "STRING"
+      },
+      {
+        "name": "remoteIp",
+        "type": "STRING"
+      },
+      {
+        "name": "serverIp",
+        "type": "STRING"
+      },
+      {
+        "name": "referer",
+        "type": "STRING"
+      },
+      {
+        "name": "cacheLookup",
+        "type": "BOOLEAN"
+      },
+      {
+        "name": "cacheHit",
+        "type": "BOOLEAN"
+      },
+      {
+        "name": "cacheValidatedWithOriginServer",
+        "type": "BOOLEAN"
+      },
+      {
+        "name": "cacheFillBytes",
+        "type": "INTEGER"
+      },
+      {
+        "name": "protocol",
+        "type": "STRING"
+      }
+    ],
+    "name": "httpRequest",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "name": "client_version",
+        "type": "STRING"
+      },
+      {
+        "name": "client_name",
+        "type": "STRING"
+      },
+      {
+        "name": "request_id",
+        "type": "STRING"
+      },
+      {
+        "name": "model",
+        "type": "STRING"
+      },
+      {
+        "name": "user_id",
+        "type": "STRING"
+      },
+      {
+        "name": "trajectory_id",
+        "type": "STRING"
+      }
+    ],
+    "name": "labels",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING"
+      },
+      {
+        "name": "producer",
+        "type": "STRING"
+      },
+      {
+        "name": "first",
+        "type": "BOOLEAN"
+      },
+      {
+        "name": "last",
+        "type": "BOOLEAN"
+      }
+    ],
+    "name": "operation",
+    "type": "RECORD"
+  },
+  {
+    "name": "trace",
+    "type": "STRING"
+  },
+  {
+    "name": "spanId",
+    "type": "STRING"
+  },
+  {
+    "name": "traceSampled",
+    "type": "BOOLEAN"
+  },
+  {
+    "fields": [
+      {
+        "name": "file",
+        "type": "STRING"
+      },
+      {
+        "name": "line",
+        "type": "INTEGER"
+      },
+      {
+        "name": "function",
+        "type": "STRING"
+      }
+    ],
+    "name": "sourceLocation",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "name": "uid",
+        "type": "STRING"
+      },
+      {
+        "name": "index",
+        "type": "INTEGER"
+      },
+      {
+        "name": "totalSplits",
+        "type": "INTEGER"
+      }
+    ],
+    "name": "split",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "errorGroups",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "fields": [
+          {
+            "name": "container",
+            "type": "STRING"
+          },
+          {
+            "name": "location",
+            "type": "STRING"
+          },
+          {
+            "name": "id",
+            "type": "STRING"
+          }
+        ],
+        "name": "application",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "name": "id",
+            "type": "STRING"
+          },
+          {
+            "name": "environmentType",
+            "type": "STRING"
+          },
+          {
+            "name": "criticalityType",
+            "type": "STRING"
+          }
+        ],
+        "name": "service",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "name": "id",
+            "type": "STRING"
+          },
+          {
+            "name": "environmentType",
+            "type": "STRING"
+          },
+          {
+            "name": "criticalityType",
+            "type": "STRING"
+          }
+        ],
+        "name": "workload",
+        "type": "RECORD"
+      }
+    ],
+    "name": "apphub",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "fields": [
+          {
+            "name": "container",
+            "type": "STRING"
+          },
+          {
+            "name": "location",
+            "type": "STRING"
+          },
+          {
+            "name": "id",
+            "type": "STRING"
+          }
+        ],
+        "name": "application",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "name": "id",
+            "type": "STRING"
+          },
+          {
+            "name": "environmentType",
+            "type": "STRING"
+          },
+          {
+            "name": "criticalityType",
+            "type": "STRING"
+          }
+        ],
+        "name": "service",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "name": "id",
+            "type": "STRING"
+          },
+          {
+            "name": "environmentType",
+            "type": "STRING"
+          },
+          {
+            "name": "criticalityType",
+            "type": "STRING"
+          }
+        ],
+        "name": "workload",
+        "type": "RECORD"
+      }
+    ],
+    "name": "apphubDestination",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "fields": [
+          {
+            "name": "container",
+            "type": "STRING"
+          },
+          {
+            "name": "location",
+            "type": "STRING"
+          },
+          {
+            "name": "id",
+            "type": "STRING"
+          }
+        ],
+        "name": "application",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "name": "id",
+            "type": "STRING"
+          },
+          {
+            "name": "environmentType",
+            "type": "STRING"
+          },
+          {
+            "name": "criticalityType",
+            "type": "STRING"
+          }
+        ],
+        "name": "service",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "name": "id",
+            "type": "STRING"
+          },
+          {
+            "name": "environmentType",
+            "type": "STRING"
+          },
+          {
+            "name": "criticalityType",
+            "type": "STRING"
+          }
+        ],
+        "name": "workload",
+        "type": "RECORD"
+      }
+    ],
+    "name": "apphubSource",
+    "type": "RECORD"
+  }
+]
