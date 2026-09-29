@@ -477,7 +477,7 @@ def emit_call(w, ctx, t_req, latency_s, model, exp, request_id, trajectory_id, a
                    "cachedcontenttokencount": str(tokens["cached"])})
         if tokens["thoughts"]:
             md["thoughtstokencount"] = str(tokens["thoughts"])
-        if quota_type:
+        if quota_type and ctx.get("quota"):
             md["quotatype"] = quota_type
     msgs = [{"content": reply_text, "author": "MODEL"}] if reply_text else []
     resp["jsonpayload_v1_inferenceresponselog"] = {
@@ -596,7 +596,7 @@ class Sim:
         return {"project": project, "project_number": self.cfg["gcp_projects"][project],
                 "email": u["email"], "client_name": self.cfg["company"]["client_name"],
                 "client_version": rel["version"], "breakdown": rel["breakdown"],
-                "aux_rate": rel["aux_rate"]}
+                "aux_rate": rel["aux_rate"], "quota": rel.get("quota", False)}
 
     # --- one trajectory ----------------------------------------------------
     def trajectory(self, u, arch, day, tz_off, home_dir, runaway):
