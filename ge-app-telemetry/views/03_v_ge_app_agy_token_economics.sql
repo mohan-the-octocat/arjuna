@@ -26,33 +26,58 @@ WITH raw_deduped AS (
   WHERE
     timestamp IS NOT NULL
   QUALIFY ROW_NUMBER() OVER(PARTITION BY insertId ORDER BY timestamp DESC) = 1
+),
+rate_lookup AS (
+  SELECT
+    model,
+    MAX(usd_per_1m_tokens) AS usd_per_1m_tokens
+  FROM
+    `{{PROJECT_ID}}.{{DATASET_ID}}.ge_app_agy_rate_card`
+  GROUP BY
+    model
+),
+fallback_rate AS (
+  SELECT
+    COALESCE(MAX(usd_per_1m_tokens), 0.15) AS usd_per_1m_tokens
+  FROM
+    `{{PROJECT_ID}}.{{DATASET_ID}}.ge_app_agy_rate_card`
+  WHERE
+    model = '*'
 )
 SELECT
-  DATE(timestamp) AS event_date,
-  REGEXP_REPLACE(raw_user_id, r'^user:', '') AS user_email,
-  COALESCE(client_name, 'unspecified') AS client_name,
-  COALESCE(model, 'unspecified') AS model,
-  COALESCE(experience, 'unspecified') AS experience,
+  DATE(r.timestamp) AS event_date,
+  REGEXP_REPLACE(r.raw_user_id, r'^user:', '') AS user_email,
+  COALESCE(r.client_name, 'unspecified') AS client_name,
+  COALESCE(r.model, 'unspecified') AS model,
+  COALESCE(r.experience, 'unspecified') AS experience,
   COUNT(1) AS total_inferences,
-  SUM(COALESCE(total_token_count, 0)) AS total_tokens,
-  ROUND(AVG(COALESCE(total_token_count, 0)), 2) AS avg_tokens_per_inference,
-  MIN(total_token_count) AS min_tokens_in_turn,
-  MAX(total_token_count) AS max_tokens_in_turn,
-  COUNT(DISTINCT trajectory_id) AS active_trajectories,
+  COUNTIF(r.trajectory_id IS NOT NULL) AS trajectory_inferences,
+  COUNTIF(r.trajectory_id IS NULL) AS aux_inferences,
+  SUM(COALESCE(r.total_token_count, 0)) AS total_tokens,
+  SUM(IF(r.trajectory_id IS NOT NULL, COALESCE(r.total_token_count, 0), 0)) AS trajectory_tokens,
+  SUM(IF(r.trajectory_id IS NULL, COALESCE(r.total_token_count, 0), 0)) AS aux_tokens,
+  ROUND(AVG(COALESCE(r.total_token_count, 0)), 2) AS avg_tokens_per_inference,
+  MIN(r.total_token_count) AS min_tokens_in_turn,
+  MAX(r.total_token_count) AS max_tokens_in_turn,
+  COUNT(DISTINCT r.trajectory_id) AS active_trajectories,
   ROUND(SAFE_DIVIDE(
-    SUM(COALESCE(total_token_count, 0)),
-    NULLIF(COUNT(DISTINCT trajectory_id), 0)
+    SUM(IF(r.trajectory_id IS NOT NULL, COALESCE(r.total_token_count, 0), 0)),
+    NULLIF(COUNT(DISTINCT r.trajectory_id), 0)
   ), 2) AS avg_tokens_per_trajectory,
-  -- Cost calculations (Blended rate: $0.15 per 1M tokens)
-  ROUND(SUM(COALESCE(total_token_count, 0)) * 0.00000015, 4) AS estimated_cost_usd_list,
-  -- 50% Promotional discount for Gemini 3.5/3.7 Flash ($0.075 per 1M tokens)
-  ROUND(SUM(COALESCE(total_token_count, 0)) * 0.000000075, 4) AS estimated_cost_usd_discounted,
+  -- Cost calculations using per-model rate card with '*' fallback
+  ROUND(SUM(COALESCE(r.total_token_count, 0) * COALESCE(rc.usd_per_1m_tokens, fb.usd_per_1m_tokens, 0.15) / 1e6), 4) AS estimated_cost_usd_list,
+  ROUND(SUM(COALESCE(r.total_token_count, 0) * COALESCE(rc.usd_per_1m_tokens, fb.usd_per_1m_tokens, 0.15) / 1e6) * 0.5, 4) AS estimated_cost_usd_discounted,
   -- Seat vs Pay-as-you-go classification
   CASE 
-    WHEN client_name IN ('antigravity_hub', 'antigravity_cli', 'vscode') THEN 'SEAT_INCLUDED'
+    WHEN r.client_name IN ('antigravity_hub', 'antigravity_cli', 'vscode') THEN 'SEAT_INCLUDED'
     ELSE 'PAYGO_AUTOMATION'
   END AS subscription_tier_type
 FROM
-  raw_deduped
+  raw_deduped r
+LEFT JOIN
+  rate_lookup rc
+  ON COALESCE(r.model, 'unspecified') = rc.model
+CROSS JOIN
+  fallback_rate fb
 GROUP BY
-  1, 2, 3, 4, 5, 15;
+  event_date, user_email, client_name, model, experience, subscription_tier_type;

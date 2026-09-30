@@ -32,8 +32,10 @@ SELECT
   COALESCE(client_version, 'unspecified') AS client_version,
   COALESCE(model, 'unspecified') AS model,
   COUNT(request_id) AS total_inferences,
+  COUNTIF(trajectory_id IS NOT NULL) AS trajectory_inferences,
+  COUNTIF(trajectory_id IS NULL) AS aux_inferences,
   COUNT(DISTINCT trajectory_id) AS active_trajectories,
-  ROUND(SAFE_DIVIDE(COUNT(request_id), COUNT(DISTINCT trajectory_id)), 2) AS inferences_per_trajectory,
+  ROUND(SAFE_DIVIDE(COUNTIF(trajectory_id IS NOT NULL), COUNT(DISTINCT trajectory_id)), 2) AS inferences_per_trajectory,
   COUNT(DISTINCT EXTRACT(HOUR FROM timestamp)) AS active_hours_count,
   MIN(timestamp) AS first_activity_utc,
   MAX(timestamp) AS last_activity_utc

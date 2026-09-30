@@ -1,0 +1,7 @@
+model,usd_per_1m_tokens,source
+gemini-3-pro-image,0.15,upstream blended default; replace with contracted rates
+gemini-3.5-flash,0.15,upstream blended default; replace with contracted rates
+gemini-3.5-flash-lite,0.15,upstream blended default; replace with contracted rates
+gemini-3.7-flash,0.15,upstream blended default; replace with contracted rates
+gemini-3.8-flash,0.15,upstream blended default; replace with contracted rates
+*,0.15,upstream blended default; replace with contracted rates

@@ -1,5 +1,6 @@
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
@@ -92,5 +93,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[Google Antigravity Telemetry Dashboard] Server running on http://${HOST}:${PORT}`);
-  console.log(`Cloudtop External URL: http://sanjitmehta-work-1.c.googlers.com:${PORT}`);
+  console.log(`Cloudtop External URL: http://${os.hostname()}:${PORT}`);
 });

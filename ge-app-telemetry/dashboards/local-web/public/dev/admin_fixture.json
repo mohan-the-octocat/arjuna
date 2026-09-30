@@ -1,0 +1,505 @@
+{
+  "config": {
+    "window_days": 30,
+    "corporate_domains": ["cymbalgroup.com"],
+    "project_budgets_usd": {
+      "proj-payments-prod": 400.0,
+      "proj-mobile-dev": 250.0,
+      "proj-data-platform": 150.0
+    },
+    "budget_alert_thresholds": [0.5, 0.8, 1.0],
+    "fast_approval_seconds": 2,
+    "abandon_idle_hours": 24,
+    "rightsizing_max_steps": 3,
+    "runaway_min_steps": 100
+  },
+  "window": {
+    "start": "2026-08-30",
+    "end": "2026-09-29",
+    "days": 30
+  },
+  "rate_card": [
+    {
+      "model": "gemini-3.7-flash",
+      "usd_per_1m_tokens": 0.15,
+      "source": "upstream blended default; replace with contracted rates"
+    },
+    {
+      "model": "gemini-3.5-flash-lite",
+      "usd_per_1m_tokens": 0.075,
+      "source": "upstream blended default; replace with contracted rates"
+    },
+    {
+      "model": "gemini-3-pro-image",
+      "usd_per_1m_tokens": 0.15,
+      "source": "upstream blended default; replace with contracted rates"
+    },
+    {
+      "model": "*",
+      "usd_per_1m_tokens": 0.15,
+      "source": "fallback rate"
+    }
+  ],
+  "overview": {
+    "wau": 842,
+    "wau_prev": 794,
+    "cost_per_resolved_usd": 0.38,
+    "cost_per_resolved_usd_prev": 0.41,
+    "rework_rate": 0.21,
+    "rework_rate_prev": 0.24,
+    "privacy_checks_passing": 2,
+    "privacy_checks_total": 4,
+    "current_version": "2.11.0",
+    "fleet_on_current_version_pct": 64.2
+  },
+  "alerts": [
+    {
+      "severity": "red",
+      "theme": "security",
+      "title": "Prompt text stored in BigQuery",
+      "detail": "Prompt text is being stored in inference_request — ZDR exclusion covers responses only"
+    },
+    {
+      "severity": "amber",
+      "theme": "cost",
+      "title": "Budget threshold warning",
+      "detail": "proj-mobile-dev reached 82% of monthly token budget"
+    },
+    {
+      "severity": "amber",
+      "theme": "security",
+      "title": "External email domain detected",
+      "detail": "New external email domain seen: gmail.com (3 users)"
+    },
+    {
+      "severity": "amber",
+      "theme": "cost",
+      "title": "Runaway sessions detected",
+      "detail": "2 runaway sessions exceeded 100 steps"
+    }
+  ],
+  "value": {
+    "proposal_outcomes_by_model": [
+      {
+        "model": "gemini-3.7-flash",
+        "experience": "gemini-3.7-flash",
+        "accepted": 820,
+        "modified": 140,
+        "rejected": 90,
+        "total": 1050,
+        "rework_rate": 0.219
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "experience": "gemini-3.5-flash-lite",
+        "accepted": 310,
+        "modified": 45,
+        "rejected": 65,
+        "total": 420,
+        "rework_rate": 0.262
+      },
+      {
+        "model": "gemini-3-pro-image",
+        "experience": "gemini-3-pro-image",
+        "accepted": 85,
+        "modified": 8,
+        "rejected": 7,
+        "total": 100,
+        "rework_rate": 0.150
+      }
+    ],
+    "proposal_outcomes_weekly": [
+      {
+        "week_start": "2026-08-10",
+        "accepted": 280,
+        "modified": 65,
+        "rejected": 45,
+        "rework_rate": 0.282
+      },
+      {
+        "week_start": "2026-08-17",
+        "accepted": 310,
+        "modified": 60,
+        "rejected": 40,
+        "rework_rate": 0.244
+      },
+      {
+        "week_start": "2026-08-24",
+        "accepted": 340,
+        "modified": 55,
+        "rejected": 35,
+        "rework_rate": 0.209
+      },
+      {
+        "week_start": "2026-08-31",
+        "accepted": 370,
+        "modified": 50,
+        "rejected": 30,
+        "rework_rate": 0.178
+      },
+      {
+        "week_start": "2026-09-07",
+        "accepted": 390,
+        "modified": 52,
+        "rejected": 28,
+        "rework_rate": 0.170
+      },
+      {
+        "week_start": "2026-09-14",
+        "accepted": 410,
+        "modified": 58,
+        "rejected": 32,
+        "rework_rate": 0.180
+      },
+      {
+        "week_start": "2026-09-21",
+        "accepted": 430,
+        "modified": 62,
+        "rejected": 38,
+        "rework_rate": 0.189
+      }
+    ],
+    "outcomes_summary": {
+      "trajectories": 412,
+      "resolved": 280,
+      "abandoned": 85,
+      "in_flight": 47,
+      "est_cost_usd": 156.40,
+      "resolved_cost_usd": 106.40,
+      "abandoned_cost_usd": 32.30,
+      "cost_per_resolved_usd": 0.38,
+      "abandoned_cost_pct": 20.65
+    },
+    "outcomes_by_model_tier": [
+      {
+        "model": "gemini-3.7-flash",
+        "experience": "gemini-3.7-flash-high",
+        "trajectories": 180,
+        "resolved": 130,
+        "resolution_rate": 0.722,
+        "est_cost_usd": 82.50,
+        "cost_per_resolved_usd": 0.63,
+        "abandoned_cost_usd": 16.20
+      },
+      {
+        "model": "gemini-3.7-flash",
+        "experience": "gemini-3.7-flash",
+        "trajectories": 160,
+        "resolved": 110,
+        "resolution_rate": 0.688,
+        "est_cost_usd": 54.40,
+        "cost_per_resolved_usd": 0.49,
+        "abandoned_cost_usd": 11.10
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "experience": "gemini-3.5-flash-lite",
+        "trajectories": 72,
+        "resolved": 40,
+        "resolution_rate": 0.556,
+        "est_cost_usd": 19.50,
+        "cost_per_resolved_usd": 0.49,
+        "abandoned_cost_usd": 5.00
+      }
+    ]
+  },
+  "cost": {
+    "project_showback": [
+      {
+        "project_id": "proj-payments-prod",
+        "project_number": "123456789012",
+        "users": 42,
+        "trajectories": 180,
+        "inferences": 2400,
+        "total_tokens": 18500000,
+        "est_cost_usd": 277.50,
+        "budget_usd": 400.0,
+        "budget_pct": 69.4,
+        "status": "ok"
+      },
+      {
+        "project_id": "proj-mobile-dev",
+        "project_number": "234567890123",
+        "users": 28,
+        "trajectories": 120,
+        "inferences": 1600,
+        "total_tokens": 13600000,
+        "est_cost_usd": 205.00,
+        "budget_usd": 250.0,
+        "budget_pct": 82.0,
+        "status": "warn"
+      },
+      {
+        "project_id": "proj-data-platform",
+        "project_number": "345678901234",
+        "users": 19,
+        "trajectories": 75,
+        "inferences": 950,
+        "total_tokens": 8200000,
+        "est_cost_usd": 123.00,
+        "budget_usd": 150.0,
+        "budget_pct": 82.0,
+        "status": "warn"
+      },
+      {
+        "project_id": "proj-sandbox",
+        "project_number": "456789012345",
+        "users": 12,
+        "trajectories": 37,
+        "inferences": 450,
+        "total_tokens": 3100000,
+        "est_cost_usd": 46.50,
+        "budget_usd": null,
+        "budget_pct": null,
+        "status": "no_budget"
+      }
+    ],
+    "project_daily": [
+      {"event_date": "2026-09-20", "project_id": "proj-payments-prod", "est_cost_usd": 14.20},
+      {"event_date": "2026-09-20", "project_id": "proj-mobile-dev", "est_cost_usd": 9.80},
+      {"event_date": "2026-09-20", "project_id": "proj-data-platform", "est_cost_usd": 5.40},
+      {"event_date": "2026-09-20", "project_id": "proj-sandbox", "est_cost_usd": 2.10},
+      {"event_date": "2026-09-21", "project_id": "proj-payments-prod", "est_cost_usd": 15.60},
+      {"event_date": "2026-09-21", "project_id": "proj-mobile-dev", "est_cost_usd": 11.20},
+      {"event_date": "2026-09-21", "project_id": "proj-data-platform", "est_cost_usd": 6.10},
+      {"event_date": "2026-09-21", "project_id": "proj-sandbox", "est_cost_usd": 2.40},
+      {"event_date": "2026-09-22", "project_id": "proj-payments-prod", "est_cost_usd": 13.90},
+      {"event_date": "2026-09-22", "project_id": "proj-mobile-dev", "est_cost_usd": 10.50},
+      {"event_date": "2026-09-22", "project_id": "proj-data-platform", "est_cost_usd": 4.80},
+      {"event_date": "2026-09-22", "project_id": "proj-sandbox", "est_cost_usd": 1.90}
+    ],
+    "aux_overhead_by_version": [
+      {
+        "client_name": "antigravity_hub",
+        "client_version": "2.10.0",
+        "total_calls": 8400,
+        "aux_calls": 980,
+        "aux_call_pct": 11.67,
+        "total_tokens": 42000000,
+        "aux_tokens": 4620000,
+        "aux_token_pct": 11.0,
+        "first_seen": "2026-07-02"
+      },
+      {
+        "client_name": "antigravity_hub",
+        "client_version": "2.11.0",
+        "total_calls": 5200,
+        "aux_calls": 780,
+        "aux_call_pct": 15.0,
+        "total_tokens": 28000000,
+        "aux_tokens": 4200000,
+        "aux_token_pct": 15.0,
+        "first_seen": "2026-07-14"
+      }
+    ],
+    "aux_overhead_weekly": [
+      {"week_start": "2026-08-17", "aux_token_pct": 10.5},
+      {"week_start": "2026-08-24", "aux_token_pct": 11.2},
+      {"week_start": "2026-08-31", "aux_token_pct": 11.8},
+      {"week_start": "2026-09-07", "aux_token_pct": 13.4},
+      {"week_start": "2026-09-14", "aux_token_pct": 14.8},
+      {"week_start": "2026-09-21", "aux_token_pct": 15.1}
+    ],
+    "automation_vs_seat_weekly": [
+      {"week_start": "2026-08-31", "subscription_tier_type": "SEAT_INCLUDED", "total_tokens": 12000000},
+      {"week_start": "2026-08-31", "subscription_tier_type": "PAYGO_AUTOMATION", "total_tokens": 3000000},
+      {"week_start": "2026-09-07", "subscription_tier_type": "SEAT_INCLUDED", "total_tokens": 13500000},
+      {"week_start": "2026-09-07", "subscription_tier_type": "PAYGO_AUTOMATION", "total_tokens": 3500000},
+      {"week_start": "2026-09-14", "subscription_tier_type": "SEAT_INCLUDED", "total_tokens": 14000000},
+      {"week_start": "2026-09-14", "subscription_tier_type": "PAYGO_AUTOMATION", "total_tokens": 4200000},
+      {"week_start": "2026-09-21", "subscription_tier_type": "SEAT_INCLUDED", "total_tokens": 15000000},
+      {"week_start": "2026-09-21", "subscription_tier_type": "PAYGO_AUTOMATION", "total_tokens": 4800000}
+    ],
+    "rightsizing": [
+      {
+        "project_id": "proj-payments-prod",
+        "experience": "gemini-3.7-flash-high",
+        "trajectories": 90,
+        "short_trajectories": 18,
+        "short_pct": 20.0,
+        "est_cost_usd": 48.60,
+        "short_cost_usd": 6.20,
+        "resolution_rate": 0.74
+      },
+      {
+        "project_id": "proj-mobile-dev",
+        "experience": "gemini-3.7-flash-high",
+        "trajectories": 65,
+        "short_trajectories": 21,
+        "short_pct": 32.3,
+        "est_cost_usd": 35.10,
+        "short_cost_usd": 8.40,
+        "resolution_rate": 0.69
+      }
+    ],
+    "runaway_sessions": [
+      {
+        "trajectory_id": "traj-88391a-runaway",
+        "project_id": "proj-mobile-dev",
+        "user_email": "dev.jain@cymbalgroup.com",
+        "steps": 142,
+        "total_tokens": 3450000,
+        "est_cost_usd": 0.518,
+        "first_ts": "2026-09-25 14:10:00",
+        "last_ts": "2026-09-25 18:32:00",
+        "resolved": false
+      },
+      {
+        "trajectory_id": "traj-44910b-runaway",
+        "project_id": "proj-payments-prod",
+        "user_email": "mohit.sinha@cymbalgroup.com",
+        "steps": 118,
+        "total_tokens": 2890000,
+        "est_cost_usd": 0.434,
+        "first_ts": "2026-09-26 09:15:00",
+        "last_ts": "2026-09-26 12:45:00",
+        "resolved": true
+      }
+    ]
+  },
+  "security": {
+    "privacy_checks": [
+      {
+        "id": "prompt_text_stored",
+        "label": "Prompt text not stored in BigQuery",
+        "status": "FAIL",
+        "detail": "Found 4,812 requests with prompt text in input.messages"
+      },
+      {
+        "id": "response_candidates_stripped",
+        "label": "Model response candidates stripped (ZDR)",
+        "status": "PASS",
+        "detail": "0 responses with raw output candidates stored"
+      },
+      {
+        "id": "partition_expiration",
+        "label": "Partition expiration active on tables",
+        "status": "PASS",
+        "detail": "Tables expire after 90 days"
+      },
+      {
+        "id": "emails_unmasked",
+        "label": "User email masking posture",
+        "status": "WARN",
+        "detail": "42 distinct unmasked user email identities visible"
+      }
+    ],
+    "privacy_facts": {
+      "requests_total": 48120,
+      "requests_with_prompt_text": 4812,
+      "responses_total": 48120,
+      "responses_with_candidates": 0,
+      "oldest_request_ts": "2026-07-01 00:00:00",
+      "partition_expiration_days": 90,
+      "distinct_user_emails": 42
+    },
+    "identity_domains": [
+      {
+        "domain": "cymbalgroup.com",
+        "users": 39,
+        "projects": 4,
+        "inferences": 47200,
+        "is_corporate": true,
+        "first_seen": "2026-07-01",
+        "last_seen": "2026-09-29"
+      },
+      {
+        "domain": "gmail.com",
+        "users": 3,
+        "projects": 1,
+        "inferences": 920,
+        "is_corporate": false,
+        "first_seen": "2026-09-15",
+        "last_seen": "2026-09-28"
+      }
+    ],
+    "approval_posture_by_project": [
+      {
+        "project_id": "proj-payments-prod",
+        "users": 42,
+        "grants_accepted": 1420,
+        "grants_rejected": 95,
+        "reject_rate": 0.063,
+        "fast_grants": 180,
+        "fast_grant_pct": 11.9,
+        "median_decision_seconds": 4.5,
+        "zero_reject_high_volume_users": 1
+      },
+      {
+        "project_id": "proj-mobile-dev",
+        "users": 28,
+        "grants_accepted": 890,
+        "grants_rejected": 110,
+        "reject_rate": 0.110,
+        "fast_grants": 145,
+        "fast_grant_pct": 14.5,
+        "median_decision_seconds": 3.8,
+        "zero_reject_high_volume_users": 0
+      },
+      {
+        "project_id": "proj-data-platform",
+        "users": 19,
+        "grants_accepted": 540,
+        "grants_rejected": 15,
+        "reject_rate": 0.027,
+        "fast_grants": 120,
+        "fast_grant_pct": 21.6,
+        "median_decision_seconds": 2.1,
+        "zero_reject_high_volume_users": 2
+      }
+    ],
+    "audit_export": {
+      "configured": false,
+      "note": "Scheduled export to GCS is not configured in this build."
+    }
+  },
+  "adoption": {
+    "customization": {
+      "wau": 842,
+      "skills_pct": 18.5,
+      "subagents_pct": 9.2,
+      "slash_pct": 34.0,
+      "hooks_pct": 5.4,
+      "weekly": [
+        {"week_start": "2026-08-31", "skills_pct": 12.0, "subagents_pct": 6.1, "slash_pct": 24.5, "hooks_pct": 3.2},
+        {"week_start": "2026-09-07", "skills_pct": 14.2, "subagents_pct": 7.0, "slash_pct": 28.0, "hooks_pct": 4.1},
+        {"week_start": "2026-09-14", "skills_pct": 16.5, "subagents_pct": 8.1, "slash_pct": 31.2, "hooks_pct": 4.8},
+        {"week_start": "2026-09-21", "skills_pct": 18.5, "subagents_pct": 9.2, "slash_pct": 34.0, "hooks_pct": 5.4}
+      ],
+      "top_slash_commands": [
+        {"command": "/test", "uses": 4120, "users": 245},
+        {"command": "/fix", "uses": 3640, "users": 218},
+        {"command": "/refactor", "uses": 2890, "users": 184},
+        {"command": "/explain", "uses": 1920, "users": 142},
+        {"command": "/review", "uses": 1450, "users": 115}
+      ]
+    },
+    "surface_mix_weekly": [
+      {"week_start": "2026-08-31", "client_name": "antigravity_hub", "users": 520},
+      {"week_start": "2026-08-31", "client_name": "antigravity_cli", "users": 210},
+      {"week_start": "2026-08-31", "client_name": "antigravity_vscode", "users": 180},
+      {"week_start": "2026-09-07", "client_name": "antigravity_hub", "users": 560},
+      {"week_start": "2026-09-07", "client_name": "antigravity_cli", "users": 235},
+      {"week_start": "2026-09-07", "client_name": "antigravity_vscode", "users": 205},
+      {"week_start": "2026-09-14", "client_name": "antigravity_hub", "users": 600},
+      {"week_start": "2026-09-14", "client_name": "antigravity_cli", "users": 260},
+      {"week_start": "2026-09-14", "client_name": "antigravity_vscode", "users": 220},
+      {"week_start": "2026-09-21", "client_name": "antigravity_hub", "users": 640},
+      {"week_start": "2026-09-21", "client_name": "antigravity_cli", "users": 290},
+      {"week_start": "2026-09-21", "client_name": "antigravity_vscode", "users": 240}
+    ],
+    "multi_surface_users_pct": 27.4
+  },
+  "fleet": {
+    "version_distribution_weekly": [
+      {"week_start": "2026-08-31", "client_version": "2.10.0", "users": 620},
+      {"week_start": "2026-08-31", "client_version": "2.11.0", "users": 180},
+      {"week_start": "2026-09-07", "client_version": "2.10.0", "users": 480},
+      {"week_start": "2026-09-07", "client_version": "2.11.0", "users": 340},
+      {"week_start": "2026-09-14", "client_version": "2.10.0", "users": 320},
+      {"week_start": "2026-09-14", "client_version": "2.11.0", "users": 510},
+      {"week_start": "2026-09-21", "client_version": "2.10.0", "users": 210},
+      {"week_start": "2026-09-21", "client_version": "2.11.0", "users": 540}
+    ]
+  }
+}
