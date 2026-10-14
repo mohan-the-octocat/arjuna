@@ -3,12 +3,17 @@
 # Google Antigravity (Gemini Enterprise) - Direct Log Sink Deployer
 # ==============================================================================
 # Automates the creation of:
-# 1. Dedicated BigQuery Dataset (ge_app_agy_telemetry) with regional residency
-#    and automated daily partition expiration.
-# 2. Cloud Logging Router Sink (ge-app-agy-telemetry-sink) targeting
-#    businessaicode.googleapis.com/BAICInstance with optional prompt exclusion.
-# 3. IAM Permissions Handshake granting the sink writer identity dataEditor
-#    access exclusively on the target dataset.
+# 1. RAW BigQuery dataset (ge_app_agy_raw) with regional residency and daily
+#    partition expiration. Holds ALL log fields incl. prompts and responses.
+#    Tables are pre-created from ../schemas/raw/*.json.
+# 2. Views BigQuery dataset (ge_app_agy_telemetry) holding authorized views over
+#    RAW that never return prompt text (deployed via ../views/deploy_views.sh).
+# 3. Lock-down: the default projectReaders/projectWriters access entries are
+#    removed from BOTH datasets, so only project owners have dataset access.
+# 4. Cloud Logging Router Sink (ge-app-agy-telemetry-sink) targeting
+#    businessaicode.googleapis.com/BAICInstance -> RAW (no exclusions).
+# 5. IAM Permissions Handshake granting the sink writer identity dataEditor
+#    access exclusively on the RAW dataset.
 # ==============================================================================
 
 set -euo pipefail
@@ -22,36 +27,36 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCHEMA_DIR="${SCRIPT_DIR}/../schemas/raw"
+VIEWS_DIR="${SCRIPT_DIR}/../views"
+
 # ------------------------------------------------------------------------------
 # Default Values (Following Antigravity Enterprise Conventions)
 # ------------------------------------------------------------------------------
 DEFAULT_CONFIG_FILE="config.yaml"
 DEFAULT_DATASET_ID="ge_app_agy_telemetry"
+DEFAULT_RAW_DATASET_ID="ge_app_agy_raw"
 DEFAULT_LOCATION="us-central1"
 DEFAULT_SINK_NAME="ge-app-agy-telemetry-sink"
 DEFAULT_RETENTION_DAYS="90"
-DEFAULT_EXCLUDE_PROMPTS="true"
-DEFAULT_FLASH_DISCOUNT="true"
-DEFAULT_ENABLE_PROMPT_AUDIT="false"
-DEFAULT_AUDIT_DATASET_ID="ge_app_agy_prompts_audit"
-DEFAULT_AUDIT_SINK_NAME="ge-app-agy-prompts-audit-sink"
-DEFAULT_AUDIT_RETENTION_DAYS="30"
+LEGACY_EXCLUSION_NAME="exclude-prompt-contents"
+LEGACY_AUDIT_SINK_NAME="ge-app-agy-prompts-audit-sink"
+
+TABLE_PREFIX="businessaicode_googleapis_com_"
+RAW_TABLES=(inference_request inference_response client_telemetry)
 
 PROJECT_ID=""
 DEST_PROJECT_ID=""
 DATASET_ID=""
+RAW_DATASET_ID=""
 DATASET_LOCATION=""
 SINK_NAME=""
 PARTITION_EXPIRATION_DAYS=""
-EXCLUDE_PROMPT_CONTENTS=""
-FLASH_DISCOUNT_APPLIED=""
 DEPLOYER_SERVICE_ACCOUNT=""
-ENABLE_PROMPT_AUDIT=""
-AUDIT_DATASET_ID=""
-AUDIT_SINK_NAME=""
-AUDIT_RETENTION_DAYS=""
 CONFIG_FILE=""
 HEADLESS=false
+DEPRECATED_FLAGS_USED=()
 
 # ------------------------------------------------------------------------------
 # Helper Functions
@@ -89,18 +94,17 @@ Options:
   -c, --config FILE             Path to YAML or JSON config file (default: config.yaml if present)
   -p, --project-id ID           Source GCP Project ID where Antigravity is active
   -d, --dest-project-id ID      Destination GCP Project ID hosting BigQuery (default: same as project-id)
-  --dataset-id ID               Dedicated BigQuery dataset ID (default: ${DEFAULT_DATASET_ID})
+  --raw-dataset-id ID           RAW dataset (all fields incl. prompts; owners only) (default: ${DEFAULT_RAW_DATASET_ID})
+  --dataset-id ID               Views dataset (no prompt text; owners only) (default: ${DEFAULT_DATASET_ID})
   -l, --location REGION         Dataset residency location (default: ${DEFAULT_LOCATION})
   -s, --sink-name NAME          Cloud Logging sink identifier (default: ${DEFAULT_SINK_NAME})
-  -r, --retention-days DAYS     Daily partition expiration in days (default: ${DEFAULT_RETENTION_DAYS}, 0 = never)
-  --exclude-prompts BOOL        Exclude raw code/prompts from primary dataset (true/false, default: ${DEFAULT_EXCLUDE_PROMPTS})
-  --enable-prompt-audit BOOL    Deploy isolated dataset for raw prompts/responses (default: ${DEFAULT_ENABLE_PROMPT_AUDIT})
-  --audit-dataset-id ID         Dedicated BigQuery dataset ID for prompt audit (default: ${DEFAULT_AUDIT_DATASET_ID})
-  --audit-sink-name NAME        Cloud Logging sink identifier for prompt audit (default: ${DEFAULT_AUDIT_SINK_NAME})
-  --audit-retention-days DAYS   Audit partition expiration in days (default: ${DEFAULT_AUDIT_RETENTION_DAYS})
-  --impersonate-sa SA_EMAIL     Deployer Service Account to impersonate
+  -r, --retention-days DAYS     RAW daily partition expiration in days (default: ${DEFAULT_RETENTION_DAYS}, 0 = never)
+  --impersonate-sa SA_EMAIL     Deployer Service Account to impersonate (gcloud calls)
   -y, --yes, --headless         Run in non-interactive/headless mode without prompts
   -h, --help                    Display this help message and exit
+
+Deprecated (accepted with a warning, no effect):
+  --exclude-prompts, --enable-prompt-audit, --audit-dataset-id, --audit-sink-name, --audit-retention-days
 
 Examples:
   # 1. Interactive setup with smart defaults:
@@ -110,60 +114,173 @@ Examples:
   ./deploy.sh --config=config.example.yaml
 
   # 3. Headless single-command deployment:
-  ./deploy.sh -p my-ge-project -l asia-northeast1 --dataset-id ge_app_agy_telemetry -y
+  ./deploy.sh -p my-ge-project -l asia-northeast1 -r 365 -y
 EOF
   exit 0
 }
 
-# Parse YAML/JSON config using python3 json/yaml or fallback line-parser
+# Parse YAML/JSON config (scalar keys only)
 load_config_file() {
   local file="$1"
   if [[ ! -f "$file" ]]; then
-    return
+    return 0
   fi
   log_info "Loading configuration from: ${file}"
 
-  python3 -c "
-import sys, re
+  local parsed
+  parsed=$(python3 - "$file" <<'PY'
+import sys
 
 def parse_val(v):
     v = v.strip()
-    if v.startswith('\"') and v.endswith('\"'): return v[1:-1]
-    if v.startswith(\"'\") and v.endswith(\"'\"): return v[1:-1]
+    if v.startswith('"') and v.endswith('"'): return v[1:-1]
+    if v.startswith("'") and v.endswith("'"): return v[1:-1]
     return v
 
-with open('${file}', 'r') as f:
+with open(sys.argv[1], 'r') as f:
     for line in f:
         line = line.strip()
         if not line or line.startswith('#'):
             continue
         if ':' in line:
-            parts = line.split(':', 1)
-            k = parts[0].strip()
-            v = parse_val(parts[1])
+            k, v = line.split(':', 1)
+            v = parse_val(v.split(' #', 1)[0])
             # Only print scalar keys
             if v and not v.startswith('[') and not v.startswith('{'):
-                print(f'{k}={v}')
-" > /tmp/agy_parsed_config.env
+                print(f'{k.strip()}={v}')
+PY
+)
 
   while IFS='=' read -r key val; do
     case "$key" in
       project_id) [[ -z "$PROJECT_ID" ]] && PROJECT_ID="$val" ;;
       destination_project_id) [[ -z "$DEST_PROJECT_ID" ]] && DEST_PROJECT_ID="$val" ;;
       dataset_id) [[ -z "$DATASET_ID" ]] && DATASET_ID="$val" ;;
+      raw_dataset_id) [[ -z "$RAW_DATASET_ID" ]] && RAW_DATASET_ID="$val" ;;
       dataset_location) [[ -z "$DATASET_LOCATION" ]] && DATASET_LOCATION="$val" ;;
       sink_name) [[ -z "$SINK_NAME" ]] && SINK_NAME="$val" ;;
       partition_expiration_days) [[ -z "$PARTITION_EXPIRATION_DAYS" ]] && PARTITION_EXPIRATION_DAYS="$val" ;;
-      exclude_prompt_contents) [[ -z "$EXCLUDE_PROMPT_CONTENTS" ]] && EXCLUDE_PROMPT_CONTENTS="$val" ;;
-      flash_discount_applied) [[ -z "$FLASH_DISCOUNT_APPLIED" ]] && FLASH_DISCOUNT_APPLIED="$val" ;;
       deployer_service_account) [[ -z "$DEPLOYER_SERVICE_ACCOUNT" ]] && DEPLOYER_SERVICE_ACCOUNT="$val" ;;
-      enable_prompt_audit) [[ -z "$ENABLE_PROMPT_AUDIT" ]] && ENABLE_PROMPT_AUDIT="$val" ;;
-      audit_dataset_id) [[ -z "$AUDIT_DATASET_ID" ]] && AUDIT_DATASET_ID="$val" ;;
-      audit_sink_name) [[ -z "$AUDIT_SINK_NAME" ]] && AUDIT_SINK_NAME="$val" ;;
-      audit_retention_days) [[ -z "$AUDIT_RETENTION_DAYS" ]] && AUDIT_RETENTION_DAYS="$val" ;;
+      exclude_prompt_contents|enable_prompt_audit|audit_dataset_id|audit_sink_name|audit_retention_days|flash_discount_applied)
+        DEPRECATED_FLAGS_USED+=("${key} (config)") ;;
     esac
-  done < /tmp/agy_parsed_config.env
-  rm -f /tmp/agy_parsed_config.env
+  done <<< "$parsed"
+  return 0
+}
+
+# ensure_dataset DATASET DESCRIPTION PARTITION_DAYS
+ensure_dataset() {
+  local ds="$1" desc="$2" days="$3"
+  if bq show --project_id="${DEST_PROJECT_ID}" "${ds}" &> /dev/null; then
+    log_info "Dataset ${DEST_PROJECT_ID}:${ds} already exists."
+    if [[ "$days" -gt 0 ]]; then
+      bq update --default_partition_expiration=$(( days * 86400 )) "${DEST_PROJECT_ID}:${ds}" > /dev/null
+    fi
+    return 0
+  fi
+  local flags=(--project_id="${DEST_PROJECT_ID}" --location="${DATASET_LOCATION}" --dataset --description="${desc}")
+  if [[ "$days" -gt 0 ]]; then
+    flags+=(--default_partition_expiration=$(( days * 86400 )))
+  fi
+  bq mk "${flags[@]}" "${ds}" > /dev/null
+  log_success "Created dataset ${DEST_PROJECT_ID}:${ds} (${DATASET_LOCATION})"
+}
+
+# ensure_table DATASET TABLE SCHEMA_FILE PARTITION_DAYS
+# Creates a DAY-partitioned (timestamp) table, or additively merges missing
+# fields into an existing table's schema (never removes or retypes fields) and
+# aligns its partition expiration with PARTITION_DAYS.
+ensure_table() {
+  local ds="$1" tbl="$2" schema="$3" days="$4"
+  local ref="${DEST_PROJECT_ID}:${ds}.${tbl}"
+  if ! bq show "${ref}" &> /dev/null; then
+    local flags=(--table --schema="${schema}" --time_partitioning_field=timestamp --time_partitioning_type=DAY)
+    if [[ "$days" -gt 0 ]]; then
+      flags+=(--time_partitioning_expiration=$(( days * 86400 )))
+    fi
+    bq mk "${flags[@]}" "${ref}" > /dev/null
+    log_success "Created table ${ref}"
+    return 0
+  fi
+  local cur merged status
+  cur=$(mktemp); merged=$(mktemp)
+  bq show --schema --format=json "${ref}" > "${cur}"
+  status=$(python3 - "${cur}" "${schema}" "${merged}" <<'PY'
+import json, sys
+cur = json.load(open(sys.argv[1]))
+want = json.load(open(sys.argv[2]))
+def merge(c, w):
+    changed = False
+    idx = {f['name'].lower(): f for f in c}
+    for f in w:
+        e = idx.get(f['name'].lower())
+        if e is None:
+            c.append(f); changed = True
+        elif f.get('type') == 'RECORD' and e.get('type') in ('RECORD', 'STRUCT'):
+            if merge(e.setdefault('fields', []), f.get('fields', [])):
+                changed = True
+    return changed
+changed = merge(cur, want)
+json.dump(cur, open(sys.argv[3], 'w'))
+print('CHANGED' if changed else 'SAME')
+PY
+)
+  if [[ "$status" == "CHANGED" ]]; then
+    bq update "${ref}" "${merged}" > /dev/null
+    log_success "Added missing schema fields to ${ref}"
+  else
+    log_info "Table ${ref} already has the required schema."
+  fi
+  if [[ "$days" -gt 0 ]]; then
+    bq update --time_partitioning_expiration=$(( days * 86400 )) "${ref}" > /dev/null
+  fi
+  rm -f "${cur}" "${merged}"
+}
+
+# lock_dataset DATASET [WRITER_EMAIL]
+# Removes BigQuery's default projectReaders/projectWriters entries so only
+# project owners (and explicit grants) have dataset-level access. Optionally
+# ensures WRITER for the sink writer identity.
+lock_dataset() {
+  local ds="$1" writer="${2:-}"
+  local tmp status
+  tmp=$(mktemp)
+  bq show --format=prettyjson "${DEST_PROJECT_ID}:${ds}" > "${tmp}"
+  status=$(python3 - "${tmp}" "${writer}" <<'PY'
+import json, sys
+path, writer = sys.argv[1], sys.argv[2]
+data = json.load(open(path))
+access = data.get('access', [])
+before = len(access)
+access = [a for a in access if a.get('specialGroup') not in ('projectReaders', 'projectWriters')]
+removed = before - len(access)
+added = 0
+if writer and not any(a.get('userByEmail') == writer and a.get('role') in ('WRITER', 'roles/bigquery.dataEditor') for a in access):
+    access.append({'role': 'WRITER', 'userByEmail': writer})
+    added = 1
+if not any(a.get('specialGroup') == 'projectOwners' for a in access):
+    access.append({'role': 'OWNER', 'specialGroup': 'projectOwners'})
+    added += 1
+data['access'] = access
+json.dump(data, open(path, 'w'), indent=2)
+print(f'{removed} {added}')
+PY
+)
+  local removed="${status%% *}" added="${status##* }"
+  if [[ "$removed" != "0" || "$added" != "0" ]]; then
+    bq update --source "${tmp}" "${DEST_PROJECT_ID}:${ds}" > /dev/null
+    log_success "Locked ${ds}: removed ${removed} default reader/writer entr(y/ies); added ${added} required entr(y/ies)."
+  else
+    log_info "${ds} is already locked (owners only)."
+  fi
+  rm -f "${tmp}"
+}
+
+# True if the views dataset still holds TABLES (pre-MVP layout).
+views_dataset_has_tables() {
+  local ds="$1"
+  bq show --project_id="${DEST_PROJECT_ID}" "${ds}" &> /dev/null || return 1
+  bq ls --format=json --max_results=1000 "${DEST_PROJECT_ID}:${ds}" | jq -e '[.[]? | select(.type == "TABLE")] | length > 0' > /dev/null
 }
 
 # ------------------------------------------------------------------------------
@@ -175,26 +292,16 @@ while [[ $# -gt 0 ]]; do
     -p|--project-id) PROJECT_ID="$2"; shift 2 ;;
     -d|--dest-project-id) DEST_PROJECT_ID="$2"; shift 2 ;;
     --dataset-id) DATASET_ID="$2"; shift 2 ;;
+    --raw-dataset-id) RAW_DATASET_ID="$2"; shift 2 ;;
     -l|--location) DATASET_LOCATION="$2"; shift 2 ;;
     -s|--sink-name) SINK_NAME="$2"; shift 2 ;;
     -r|--retention-days) PARTITION_EXPIRATION_DAYS="$2"; shift 2 ;;
-    --exclude-prompts)
-      if [[ -n "${2:-}" && "$2" != -* ]]; then
-        EXCLUDE_PROMPT_CONTENTS="$2"; shift 2
-      else
-        EXCLUDE_PROMPT_CONTENTS="true"; shift 1
-      fi
+    --exclude-prompts|--enable-prompt-audit)
+      DEPRECATED_FLAGS_USED+=("$1")
+      if [[ -n "${2:-}" && "$2" != -* ]]; then shift 2; else shift 1; fi
       ;;
-    --enable-prompt-audit)
-      if [[ -n "${2:-}" && "$2" != -* ]]; then
-        ENABLE_PROMPT_AUDIT="$2"; shift 2
-      else
-        ENABLE_PROMPT_AUDIT="true"; shift 1
-      fi
-      ;;
-    --audit-dataset-id) AUDIT_DATASET_ID="$2"; shift 2 ;;
-    --audit-sink-name) AUDIT_SINK_NAME="$2"; shift 2 ;;
-    --audit-retention-days) AUDIT_RETENTION_DAYS="$2"; shift 2 ;;
+    --audit-dataset-id|--audit-sink-name|--audit-retention-days)
+      DEPRECATED_FLAGS_USED+=("$1"); shift 2 ;;
     --impersonate-sa) DEPLOYER_SERVICE_ACCOUNT="$2"; shift 2 ;;
     -y|--yes|--headless) HEADLESS=true; shift ;;
     -h|--help) usage ;;
@@ -209,13 +316,21 @@ print_header
 # ------------------------------------------------------------------------------
 log_info "Executing pre-flight checks..."
 
-if ! command -v gcloud &> /dev/null; then
-  log_error "'gcloud' CLI is required but not installed or not in PATH."
-  exit 1
-fi
+for bin in gcloud bq jq python3; do
+  if ! command -v "$bin" &> /dev/null; then
+    log_error "'${bin}' is required but not installed or not in PATH."
+    exit 1
+  fi
+done
 
-if ! command -v bq &> /dev/null; then
-  log_error "'bq' CLI is required but not installed or not in PATH."
+for t in "${RAW_TABLES[@]}"; do
+  if [[ ! -f "${SCHEMA_DIR}/${t}.json" ]]; then
+    log_error "Missing RAW schema: ${SCHEMA_DIR}/${t}.json"
+    exit 1
+  fi
+done
+if [[ ! -f "${VIEWS_DIR}/deploy_views.sh" ]]; then
+  log_error "Missing views deployer: ${VIEWS_DIR}/deploy_views.sh"
   exit 1
 fi
 
@@ -233,16 +348,16 @@ ACTIVE_GCLOUD_ACCOUNT=$(gcloud config get-value account 2>/dev/null || echo "")
 PROJECT_ID="${PROJECT_ID:-$ACTIVE_GCLOUD_PROJECT}"
 DEST_PROJECT_ID="${DEST_PROJECT_ID:-$PROJECT_ID}"
 DATASET_ID="${DATASET_ID:-$DEFAULT_DATASET_ID}"
+RAW_DATASET_ID="${RAW_DATASET_ID:-$DEFAULT_RAW_DATASET_ID}"
 DATASET_LOCATION="${DATASET_LOCATION:-$DEFAULT_LOCATION}"
 SINK_NAME="${SINK_NAME:-$DEFAULT_SINK_NAME}"
 PARTITION_EXPIRATION_DAYS="${PARTITION_EXPIRATION_DAYS:-$DEFAULT_RETENTION_DAYS}"
-EXCLUDE_PROMPT_CONTENTS="${EXCLUDE_PROMPT_CONTENTS:-$DEFAULT_EXCLUDE_PROMPTS}"
-ENABLE_PROMPT_AUDIT="${ENABLE_PROMPT_AUDIT:-$DEFAULT_ENABLE_PROMPT_AUDIT}"
-AUDIT_DATASET_ID="${AUDIT_DATASET_ID:-$DEFAULT_AUDIT_DATASET_ID}"
-AUDIT_SINK_NAME="${AUDIT_SINK_NAME:-$DEFAULT_AUDIT_SINK_NAME}"
-AUDIT_RETENTION_DAYS="${AUDIT_RETENTION_DAYS:-$DEFAULT_AUDIT_RETENTION_DAYS}"
 
 log_info "Active Account : ${ACTIVE_GCLOUD_ACCOUNT:-None}"
+
+for dep in "${DEPRECATED_FLAGS_USED[@]+"${DEPRECATED_FLAGS_USED[@]}"}"; do
+  log_warn "Deprecated option ignored: ${dep}. All fields land in the locked RAW dataset; views never return prompt text."
+done
 
 # ------------------------------------------------------------------------------
 # Interactive Prompting (if not headless)
@@ -254,10 +369,14 @@ if [[ "$HEADLESS" != "true" ]]; then
   read -r -p "Source GCP Project ID [${PROJECT_ID}]: " input_proj
   PROJECT_ID="${input_proj:-$PROJECT_ID}"
 
+  [[ -z "$DEST_PROJECT_ID" ]] && DEST_PROJECT_ID="$PROJECT_ID"
   read -r -p "Destination GCP Project ID [${DEST_PROJECT_ID}]: " input_dest_proj
   DEST_PROJECT_ID="${input_dest_proj:-$DEST_PROJECT_ID}"
 
-  read -r -p "BigQuery Dataset ID [${DATASET_ID}]: " input_ds
+  read -r -p "Raw dataset ID (all fields incl. prompts) [${RAW_DATASET_ID}]: " input_raw
+  RAW_DATASET_ID="${input_raw:-$RAW_DATASET_ID}"
+
+  read -r -p "Views dataset ID (no prompt text) [${DATASET_ID}]: " input_ds
   DATASET_ID="${input_ds:-$DATASET_ID}"
 
   read -r -p "Dataset Residency Location [${DATASET_LOCATION}]: " input_loc
@@ -266,56 +385,8 @@ if [[ "$HEADLESS" != "true" ]]; then
   read -r -p "Cloud Logging Sink Name [${SINK_NAME}]: " input_sink
   SINK_NAME="${input_sink:-$SINK_NAME}"
 
-  read -r -p "Partition Expiration Days (0=never) [${PARTITION_EXPIRATION_DAYS}]: " input_ret
+  read -r -p "Raw data retention in days (0=never) [${PARTITION_EXPIRATION_DAYS}]: " input_ret
   PARTITION_EXPIRATION_DAYS="${input_ret:-$PARTITION_EXPIRATION_DAYS}"
-
-  # Prompt Logging Selection
-  include_prompts="false"
-  if [[ "$EXCLUDE_PROMPT_CONTENTS" == "false" || "$ENABLE_PROMPT_AUDIT" == "true" ]]; then
-    include_prompts="true"
-  fi
-
-  read -r -p "Include prompts, requests, responses in the logs? (y/N) [${include_prompts}]: " input_include
-  if [[ -n "$input_include" ]]; then
-    if [[ "$input_include" =~ ^[Yy](es)?$ || "$input_include" == "true" ]]; then
-      include_prompts="true"
-    else
-      include_prompts="false"
-    fi
-  fi
-
-  if [[ "$include_prompts" == "false" ]]; then
-    # Prompts, requests, responses are excluded; separate dataset question does not arise
-    EXCLUDE_PROMPT_CONTENTS="true"
-    ENABLE_PROMPT_AUDIT="false"
-  else
-    # User chose to include prompts: determine whether to store in a separate dataset
-    separate_dataset="true"
-    if [[ "$ENABLE_PROMPT_AUDIT" == "false" && "$EXCLUDE_PROMPT_CONTENTS" == "false" ]]; then
-      separate_dataset="false"
-    fi
-
-    read -r -p "Should prompts, requests, responses be stored in a separate dataset? (Y/n) [${separate_dataset}]: " input_separate
-    if [[ -n "$input_separate" ]]; then
-      if [[ "$input_separate" =~ ^[Nn]o?$ || "$input_separate" == "false" ]]; then
-        separate_dataset="false"
-      else
-        separate_dataset="true"
-      fi
-    fi
-
-    if [[ "$separate_dataset" == "true" ]]; then
-      EXCLUDE_PROMPT_CONTENTS="true"
-      ENABLE_PROMPT_AUDIT="true"
-      read -r -p "Separate dataset name to store prompts, requests, responses [${AUDIT_DATASET_ID}]: " input_audit_ds
-      AUDIT_DATASET_ID="${input_audit_ds:-$AUDIT_DATASET_ID}"
-      read -r -p "Separate dataset partition lifespan in days (0=never) [${AUDIT_RETENTION_DAYS}]: " input_audit_ret
-      AUDIT_RETENTION_DAYS="${input_audit_ret:-$AUDIT_RETENTION_DAYS}"
-    else
-      EXCLUDE_PROMPT_CONTENTS="false"
-      ENABLE_PROMPT_AUDIT="false"
-    fi
-  fi
 
   echo ""
 fi
@@ -327,6 +398,21 @@ fi
 
 DEST_PROJECT_ID="${DEST_PROJECT_ID:-$PROJECT_ID}"
 
+# ------------------------------------------------------------------------------
+# Input Validation
+# ------------------------------------------------------------------------------
+if ! [[ "$PARTITION_EXPIRATION_DAYS" =~ ^[0-9]+$ ]]; then
+  log_error "Retention days must be a non-negative integer (got '${PARTITION_EXPIRATION_DAYS}')."
+  exit 1
+fi
+if [[ "$RAW_DATASET_ID" == "$DATASET_ID" ]]; then
+  log_error "Raw dataset and views dataset must be different (both '${DATASET_ID}')."
+  exit 1
+fi
+if (( PARTITION_EXPIRATION_DAYS > 0 && PARTITION_EXPIRATION_DAYS < 90 )); then
+  log_warn "Retention ${PARTITION_EXPIRATION_DAYS}d < 90d: the 90-day window in v_ge_app_agy_user_summary will contain only ${PARTITION_EXPIRATION_DAYS} days of data."
+fi
+
 # Apply SA Impersonation flag if specified
 GCLOUD_EXTRA_FLAGS=()
 if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
@@ -334,20 +420,19 @@ if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
   GCLOUD_EXTRA_FLAGS+=(--impersonate-service-account="${DEPLOYER_SERVICE_ACCOUNT}")
 fi
 
+RETENTION_LABEL="${PARTITION_EXPIRATION_DAYS} days"
+[[ "$PARTITION_EXPIRATION_DAYS" == "0" ]] && RETENTION_LABEL="never expires"
+
 echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
 echo -e "${BOLD}Deployment Summary:${NC}"
-echo -e "  Source Project     : ${BOLD}${PROJECT_ID}${NC}"
-echo -e "  Destination Project: ${BOLD}${DEST_PROJECT_ID}${NC}"
-echo -e "  BigQuery Dataset   : ${BOLD}${DATASET_ID}${NC} (Region: ${DATASET_LOCATION})"
-echo -e "  Sink Name          : ${BOLD}${SINK_NAME}${NC}"
-echo -e "  Partition Lifespan : ${BOLD}${PARTITION_EXPIRATION_DAYS} days${NC}"
-if [[ "$ENABLE_PROMPT_AUDIT" == "true" ]]; then
-  echo -e "  Prompts/Responses  : ${BOLD}Stored in separate dataset${NC} (${AUDIT_DATASET_ID}, TTL: ${AUDIT_RETENTION_DAYS}d)"
-elif [[ "$EXCLUDE_PROMPT_CONTENTS" == "false" ]]; then
-  echo -e "  Prompts/Responses  : ${BOLD}Stored in primary dataset${NC} (${DATASET_ID})"
-else
-  echo -e "  Prompts/Responses  : ${BOLD}Excluded from logs${NC}"
-fi
+echo -e "  Source / Destination : ${BOLD}${PROJECT_ID}${NC} / ${BOLD}${DEST_PROJECT_ID}${NC}"
+echo -e "  Raw dataset          : ${BOLD}${RAW_DATASET_ID}${NC} (${RETENTION_LABEL}, ${DATASET_LOCATION}) – ALL fields incl. prompts, owners only"
+echo -e "  Views dataset        : ${BOLD}${DATASET_ID}${NC} – authorized views, NO prompt text, owners only"
+echo -e "  Sink                 : ${BOLD}${SINK_NAME}${NC} → ${RAW_DATASET_ID}"
+echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
+echo -e "${CYAN}ℹ Raw logs (including prompts and model responses) are stored in ${RAW_DATASET_ID} (${RETENTION_LABEL}).${NC}"
+echo "  Only project owners can read it (project Editors / BigQuery Admins inherit access via IAM)."
+echo "  Dashboards read ${DATASET_ID} views, which never return prompt text."
 echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
 
 if [[ "$HEADLESS" != "true" ]]; then
@@ -363,251 +448,127 @@ fi
 # ------------------------------------------------------------------------------
 log_info "Verifying required GCP APIs on project ${PROJECT_ID}..."
 gcloud services enable logging.googleapis.com bigquery.googleapis.com \
-  --project="${PROJECT_ID}" "${GCLOUD_EXTRA_FLAGS[@]}" --quiet
+  --project="${PROJECT_ID}" "${GCLOUD_EXTRA_FLAGS[@]+"${GCLOUD_EXTRA_FLAGS[@]}"}" --quiet
 
 if [[ "$PROJECT_ID" != "$DEST_PROJECT_ID" ]]; then
   log_info "Enabling BigQuery API on destination project ${DEST_PROJECT_ID}..."
   gcloud services enable bigquery.googleapis.com \
-    --project="${DEST_PROJECT_ID}" "${GCLOUD_EXTRA_FLAGS[@]}" --quiet
+    --project="${DEST_PROJECT_ID}" "${GCLOUD_EXTRA_FLAGS[@]+"${GCLOUD_EXTRA_FLAGS[@]}"}" --quiet
 fi
 
 # ------------------------------------------------------------------------------
-# Step 2: Create Dedicated BigQuery Dataset
+# Step 2: Datasets (+ legacy layout guard)
 # ------------------------------------------------------------------------------
-log_info "Checking if BigQuery dataset ${DEST_PROJECT_ID}:${DATASET_ID} exists..."
-
-if bq show --project_id="${DEST_PROJECT_ID}" "${DATASET_ID}" &> /dev/null; then
-  log_info "Dataset ${DATASET_ID} already exists."
-else
-  log_info "Creating dedicated BigQuery dataset ${DATASET_ID} in ${DATASET_LOCATION}..."
-  
-  EXPIRATION_SECS=$((PARTITION_EXPIRATION_DAYS * 86400))
-  BQ_MK_FLAGS=(--project_id="${DEST_PROJECT_ID}" --location="${DATASET_LOCATION}" --dataset)
-  BQ_MK_FLAGS+=(--description="Google Antigravity Enterprise Telemetry (Gemini Enterprise)")
-  
-  if [[ "$PARTITION_EXPIRATION_DAYS" -gt 0 ]]; then
-    BQ_MK_FLAGS+=(--default_partition_expiration="${EXPIRATION_SECS}")
-  fi
-
-  bq mk "${BQ_MK_FLAGS[@]}" "${DATASET_ID}"
-  log_success "Created dataset ${DEST_PROJECT_ID}:${DATASET_ID}"
+if views_dataset_has_tables "${DATASET_ID}"; then
+  log_error "Dataset ${DEST_PROJECT_ID}:${DATASET_ID} contains TABLES from the previous layout (they may include prompts)."
+  log_error "In the new layout ${DATASET_ID} holds views only and raw data lives in ${RAW_DATASET_ID}."
+  log_error "Migrate first, e.g. per table:"
+  log_error "  bq cp ${DEST_PROJECT_ID}:${DATASET_ID}.<table> ${DEST_PROJECT_ID}:${RAW_DATASET_ID}_legacy.<table>   # keep history"
+  log_error "  bq rm -f -t ${DEST_PROJECT_ID}:${DATASET_ID}.<table>"
+  log_error "or remove everything with ./cleanup.sh, then re-run deploy.sh."
+  exit 1
 fi
 
+ensure_dataset "${RAW_DATASET_ID}" "Antigravity RAW logs (all fields incl. prompts and responses). Owners only." \
+  "${PARTITION_EXPIRATION_DAYS}"
+ensure_dataset "${DATASET_ID}" "Antigravity telemetry views (authorized views over ${RAW_DATASET_ID}; no prompt text). Owners only." 0
+
 # ------------------------------------------------------------------------------
-# Step 3: Create or Update Cloud Logging Router Sink
+# Step 3: RAW tables (pre-created so views never reference missing fields)
 # ------------------------------------------------------------------------------
-SINK_DESTINATION="bigquery.googleapis.com/projects/${DEST_PROJECT_ID}/datasets/${DATASET_ID}"
+log_info "Ensuring RAW tables..."
+for t in "${RAW_TABLES[@]}"; do
+  ensure_table "${RAW_DATASET_ID}" "${TABLE_PREFIX}${t}" "${SCHEMA_DIR}/${t}.json" "${PARTITION_EXPIRATION_DAYS}"
+done
+
+# ------------------------------------------------------------------------------
+# Step 4: Cloud Logging Router Sink -> RAW (no exclusions)
+# ------------------------------------------------------------------------------
+SINK_DESTINATION="bigquery.googleapis.com/projects/${DEST_PROJECT_ID}/datasets/${RAW_DATASET_ID}"
 SINK_FILTER='resource.type="businessaicode.googleapis.com/BAICInstance" AND logName=~"businessaicode.googleapis.com"'
 
-log_info "Configuring Cloud Logging Log Router Sink: ${SINK_NAME}..."
-
-SINK_EXISTS=$(gcloud logging sinks list --project="${PROJECT_ID}" --filter="name=${SINK_NAME}" --format="value(name)" "${GCLOUD_EXTRA_FLAGS[@]}")
+log_info "Configuring Cloud Logging Log Router Sink: ${SINK_NAME} → ${RAW_DATASET_ID}..."
+SINK_EXISTS=$(gcloud logging sinks list --project="${PROJECT_ID}" --filter="name=${SINK_NAME}" --format="value(name)" "${GCLOUD_EXTRA_FLAGS[@]+"${GCLOUD_EXTRA_FLAGS[@]}"}")
 
 CREATE_OR_UPDATE_CMD=(gcloud logging sinks)
 if [[ -n "$SINK_EXISTS" ]]; then
   log_info "Updating existing sink ${SINK_NAME}..."
   CREATE_OR_UPDATE_CMD+=(update "${SINK_NAME}" "${SINK_DESTINATION}")
+  LEGACY_EXCLUSION=$(gcloud logging sinks describe "${SINK_NAME}" --project="${PROJECT_ID}" --format="value(exclusions[].name)" "${GCLOUD_EXTRA_FLAGS[@]+"${GCLOUD_EXTRA_FLAGS[@]}"}" 2>/dev/null | tr ';' '\n' | grep -x "${LEGACY_EXCLUSION_NAME}" || true)
+  if [[ -n "$LEGACY_EXCLUSION" ]]; then
+    log_info "Removing legacy exclusion ${LEGACY_EXCLUSION_NAME} (it never removed prompts)."
+    CREATE_OR_UPDATE_CMD+=(--remove-exclusions="${LEGACY_EXCLUSION_NAME}")
+  fi
 else
   log_info "Creating new sink ${SINK_NAME}..."
-  CREATE_OR_UPDATE_CMD+=(create "${SINK_NAME}" "${SINK_DESTINATION}")
+  CREATE_OR_UPDATE_CMD+=(create "${SINK_NAME}" "${SINK_DESTINATION}" --use-partitioned-tables)
 fi
 
 CREATE_OR_UPDATE_CMD+=(
   --project="${PROJECT_ID}"
   --log-filter="${SINK_FILTER}"
-  --use-partitioned-tables
-  --description="Routes Google Antigravity GE logs to dedicated BigQuery dataset"
-  "${GCLOUD_EXTRA_FLAGS[@]}"
+  --description="Routes Google Antigravity GE logs to the locked RAW dataset ${RAW_DATASET_ID}"
+  "${GCLOUD_EXTRA_FLAGS[@]+"${GCLOUD_EXTRA_FLAGS[@]}"}"
   --quiet
 )
-
-# Apply privacy exclusion filter if enabled
-if [[ "$EXCLUDE_PROMPT_CONTENTS" == "true" ]]; then
-  log_info "Applying privacy filter: excluding prompt/code text..."
-  EXCLUSION_FILTER='logName=~"businessaicode.googleapis.com%2Finference_response" AND jsonPayload.contents:*'
-  if [[ -n "$SINK_EXISTS" ]]; then
-    EXCLUSION_EXISTS=$(gcloud logging sinks describe "${SINK_NAME}" --project="${PROJECT_ID}" --format="value(exclusions[].name)" "${GCLOUD_EXTRA_FLAGS[@]}" 2>/dev/null | grep -w "exclude-prompt-contents" || true)
-    if [[ -n "$EXCLUSION_EXISTS" ]]; then
-      CREATE_OR_UPDATE_CMD+=(
-        --update-exclusion="name=exclude-prompt-contents,description=Excludes raw prompt text and code diffs from BigQuery,filter=${EXCLUSION_FILTER}"
-      )
-    else
-      CREATE_OR_UPDATE_CMD+=(
-        --add-exclusion="name=exclude-prompt-contents,description=Excludes raw prompt text and code diffs from BigQuery,filter=${EXCLUSION_FILTER}"
-      )
-    fi
-  else
-    CREATE_OR_UPDATE_CMD+=(
-      --exclusion="name=exclude-prompt-contents,description=Excludes raw prompt text and code diffs from BigQuery,filter=${EXCLUSION_FILTER}"
-    )
-  fi
-fi
-
 "${CREATE_OR_UPDATE_CMD[@]}"
 log_success "Sink ${SINK_NAME} configured successfully."
 
 # ------------------------------------------------------------------------------
-# Step 4: Extract Sink Writer Identity & Grant Dataset Permissions
+# Step 5: Sink writer identity + lock both datasets
 # ------------------------------------------------------------------------------
 log_info "Extracting Sink Writer Service Identity..."
 WRITER_IDENTITY=$(gcloud logging sinks describe "${SINK_NAME}" \
   --project="${PROJECT_ID}" \
   --format="value(writerIdentity)" \
-  "${GCLOUD_EXTRA_FLAGS[@]}")
-
+  "${GCLOUD_EXTRA_FLAGS[@]+"${GCLOUD_EXTRA_FLAGS[@]}"}")
 log_info "Sink Writer Identity: ${WRITER_IDENTITY}"
 
-# Format for BigQuery: strip 'serviceAccount:' prefix for userByEmail
-WRITER_EMAIL="${WRITER_IDENTITY#serviceAccount:}"
+lock_dataset "${RAW_DATASET_ID}" "${WRITER_IDENTITY#serviceAccount:}"
+lock_dataset "${DATASET_ID}"
 
-log_info "Granting 'roles/bigquery.dataEditor' (WRITER) on dataset ${DEST_PROJECT_ID}:${DATASET_ID} to ${WRITER_EMAIL}..."
-
-# Retrieve current access schema and safely append the writer identity
-TMP_DS_FILE=$(mktemp)
-bq show --format=prettyjson "${DEST_PROJECT_ID}:${DATASET_ID}" > "$TMP_DS_FILE"
-
-python3 -c "
-import json
-with open('${TMP_DS_FILE}', 'r') as f:
-    data = json.load(f)
-writer_sa = '${WRITER_EMAIL}'
-access = data.get('access', [])
-# Check if writer already has WRITER or roles/bigquery.dataEditor access
-exists = any(a.get('userByEmail') == writer_sa and a.get('role') in ('WRITER', 'roles/bigquery.dataEditor') for a in access)
-if not exists:
-    access.append({'role': 'WRITER', 'userByEmail': writer_sa})
-    data['access'] = access
-    with open('${TMP_DS_FILE}', 'w') as f:
-        json.dump(data, f, indent=2)
-    print('UPDATED')
-else:
-    print('EXISTS')
-" > /tmp/agy_iam_status.txt
-
-IAM_STATUS=$(cat /tmp/agy_iam_status.txt)
-rm -f /tmp/agy_iam_status.txt
-
-if [[ "$IAM_STATUS" == "UPDATED" ]]; then
-  bq update --source "$TMP_DS_FILE" "${DEST_PROJECT_ID}:${DATASET_ID}" > /dev/null
-  log_success "Granted dataEditor access to ${WRITER_EMAIL}."
-else
-  log_info "Writer service identity already has dataEditor access on dataset."
-fi
-rm -f "$TMP_DS_FILE"
-
-# ------------------------------------------------------------------------------
-# Step 5: (Optional) Security Prompt Audit Dataset & Sink
-# ------------------------------------------------------------------------------
-if [[ "$ENABLE_PROMPT_AUDIT" == "true" ]]; then
-  log_info "Configuring optional Security & Compliance Prompt Audit Sink..."
-
-  # Step 5a: Create Dedicated Audit Dataset with short partition expiration
-  log_info "Checking if Audit BigQuery dataset ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID} exists..."
-  if bq show --project_id="${DEST_PROJECT_ID}" "${AUDIT_DATASET_ID}" &> /dev/null; then
-    log_info "Audit dataset ${AUDIT_DATASET_ID} already exists."
-  else
-    log_info "Creating isolated Audit dataset ${AUDIT_DATASET_ID} in ${DATASET_LOCATION} with ${AUDIT_RETENTION_DAYS}-day TTL..."
-    AUDIT_EXPIRATION_SECS=$((AUDIT_RETENTION_DAYS * 86400))
-    AUDIT_BQ_FLAGS=(--project_id="${DEST_PROJECT_ID}" --location="${DATASET_LOCATION}" --dataset)
-    AUDIT_BQ_FLAGS+=(--description="Google Antigravity Security Audit & Prompt Payloads (Restricted Access)")
-    if [[ "$AUDIT_RETENTION_DAYS" -gt 0 ]]; then
-      AUDIT_BQ_FLAGS+=(--default_partition_expiration="${AUDIT_EXPIRATION_SECS}")
-    fi
-    bq mk "${AUDIT_BQ_FLAGS[@]}" "${AUDIT_DATASET_ID}"
-    log_success "Created audit dataset ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}"
-  fi
-
-  # Step 5b: Create Audit Sink for inference_request and inference_response (WITHOUT prompt exclusion)
-  AUDIT_SINK_DESTINATION="bigquery.googleapis.com/projects/${DEST_PROJECT_ID}/datasets/${AUDIT_DATASET_ID}"
-  AUDIT_SINK_FILTER='resource.type="businessaicode.googleapis.com/BAICInstance" AND (logName=~"businessaicode.googleapis.com%2Finference_request" OR logName=~"businessaicode.googleapis.com%2Finference_response")'
-
-  log_info "Configuring Audit Log Router Sink: ${AUDIT_SINK_NAME}..."
-  AUDIT_SINK_EXISTS=$(gcloud logging sinks list --project="${PROJECT_ID}" --filter="name=${AUDIT_SINK_NAME}" --format="value(name)" "${GCLOUD_EXTRA_FLAGS[@]}")
-
-  AUDIT_SINK_CMD=(gcloud logging sinks)
-  if [[ -n "$AUDIT_SINK_EXISTS" ]]; then
-    log_info "Updating existing audit sink ${AUDIT_SINK_NAME}..."
-    AUDIT_SINK_CMD+=(update "${AUDIT_SINK_NAME}" "${AUDIT_SINK_DESTINATION}")
-  else
-    log_info "Creating new audit sink ${AUDIT_SINK_NAME}..."
-    AUDIT_SINK_CMD+=(create "${AUDIT_SINK_NAME}" "${AUDIT_SINK_DESTINATION}")
-  fi
-
-  AUDIT_SINK_CMD+=(
-    --project="${PROJECT_ID}"
-    --log-filter="${AUDIT_SINK_FILTER}"
-    --use-partitioned-tables
-    --description="Routes Google Antigravity full prompt & response payloads to restricted audit dataset"
-    "${GCLOUD_EXTRA_FLAGS[@]}"
-    --quiet
-  )
-  "${AUDIT_SINK_CMD[@]}"
-  log_success "Audit sink ${AUDIT_SINK_NAME} configured successfully."
-
-  # Step 5c: Extract Audit Writer Identity and grant access
-  AUDIT_WRITER_IDENTITY=$(gcloud logging sinks describe "${AUDIT_SINK_NAME}" \
-    --project="${PROJECT_ID}" \
-    --format="value(writerIdentity)" \
-    "${GCLOUD_EXTRA_FLAGS[@]}")
-  AUDIT_WRITER_EMAIL="${AUDIT_WRITER_IDENTITY#serviceAccount:}"
-  log_info "Granting 'roles/bigquery.dataEditor' on audit dataset to ${AUDIT_WRITER_EMAIL}..."
-
-  TMP_AUDIT_DS_FILE=$(mktemp)
-  bq show --format=prettyjson "${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}" > "$TMP_AUDIT_DS_FILE"
-  python3 -c "
-import json
-with open('${TMP_AUDIT_DS_FILE}', 'r') as f:
-    data = json.load(f)
-access = data.get('access', [])
-writer_sa = '${AUDIT_WRITER_EMAIL}'
-exists = any(a.get('userByEmail') == writer_sa and a.get('role') in ('WRITER', 'roles/bigquery.dataEditor') for a in access)
-if not exists:
-    access.append({'role': 'WRITER', 'userByEmail': writer_sa})
-    data['access'] = access
-    with open('${TMP_AUDIT_DS_FILE}', 'w') as f:
-        json.dump(data, f, indent=2)
-    print('UPDATED')
-else:
-    print('EXISTS')
-" > /tmp/agy_audit_iam_status.txt
-
-  AUDIT_IAM_STATUS=$(cat /tmp/agy_audit_iam_status.txt)
-  rm -f /tmp/agy_audit_iam_status.txt
-  if [[ "$AUDIT_IAM_STATUS" == "UPDATED" ]]; then
-    bq update --source "$TMP_AUDIT_DS_FILE" "${DEST_PROJECT_ID}:${AUDIT_DATASET_ID}" > /dev/null
-    log_success "Granted dataEditor access on audit dataset to ${AUDIT_WRITER_EMAIL}."
-  else
-    log_info "Audit writer already has dataEditor access on audit dataset."
-  fi
-  rm -f "$TMP_AUDIT_DS_FILE"
+# Legacy audit sink (pre-MVP design) is no longer used.
+LEGACY_AUDIT_SINK=$(gcloud logging sinks list --project="${PROJECT_ID}" --filter="name=${LEGACY_AUDIT_SINK_NAME}" --format="value(name)" "${GCLOUD_EXTRA_FLAGS[@]+"${GCLOUD_EXTRA_FLAGS[@]}"}")
+if [[ -n "$LEGACY_AUDIT_SINK" ]]; then
+  log_warn "Deleting legacy audit sink ${LEGACY_AUDIT_SINK_NAME}; all fields now land in ${RAW_DATASET_ID}."
+  gcloud logging sinks delete "${LEGACY_AUDIT_SINK_NAME}" --project="${PROJECT_ID}" "${GCLOUD_EXTRA_FLAGS[@]+"${GCLOUD_EXTRA_FLAGS[@]}"}" --quiet
 fi
 
 # ------------------------------------------------------------------------------
-# Step 6: Verification & Completion
+# Step 6: Deploy and authorize the views
+# ------------------------------------------------------------------------------
+log_info "Deploying authorized views into ${DATASET_ID}..."
+VIEW_ARGS=(-p "${DEST_PROJECT_ID}" -d "${DATASET_ID}" --raw-dataset-id "${RAW_DATASET_ID}" -y)
+if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
+  VIEW_ARGS+=(--impersonate-sa "${DEPLOYER_SERVICE_ACCOUNT}")
+fi
+( cd "${VIEWS_DIR}" && bash ./deploy_views.sh "${VIEW_ARGS[@]}" )
+
+# ------------------------------------------------------------------------------
+# Step 7: Verification & Completion
 # ------------------------------------------------------------------------------
 echo ""
 echo -e "${GREEN}${BOLD}=============================================================================="
 echo " Antigravity Direct Log Sink Deployment Completed Successfully! 🚀"
 echo "==============================================================================${NC}"
 echo ""
-echo -e "  ${BOLD}Sink Name          :${NC} ${SINK_NAME}"
-echo -e "  ${BOLD}BigQuery Dataset   :${NC} ${DEST_PROJECT_ID}:${DATASET_ID} (${DATASET_LOCATION})"
+echo -e "  ${BOLD}Sink Name          :${NC} ${SINK_NAME} → ${DEST_PROJECT_ID}:${RAW_DATASET_ID}"
 echo -e "  ${BOLD}Writer Identity    :${NC} ${WRITER_IDENTITY}"
-echo -e "  ${BOLD}Retention Lifespan :${NC} ${PARTITION_EXPIRATION_DAYS} days (auto-expiring partitions)"
-echo -e "  ${BOLD}Privacy Filter     :${NC} ${EXCLUDE_PROMPT_CONTENTS}"
-if [[ "$ENABLE_PROMPT_AUDIT" == "true" ]]; then
-  echo -e "  ${BOLD}Audit Sink Name    :${NC} ${AUDIT_SINK_NAME}"
-  echo -e "  ${BOLD}Audit Dataset      :${NC} ${DEST_PROJECT_ID}:${AUDIT_DATASET_ID} (TTL: ${AUDIT_RETENTION_DAYS}d, Unsanitized Prompts)"
-fi
+echo -e "  ${BOLD}Raw Dataset        :${NC} ${DEST_PROJECT_ID}:${RAW_DATASET_ID} (${RETENTION_LABEL}; all fields; owners only)"
+echo -e "  ${BOLD}Views Dataset      :${NC} ${DEST_PROJECT_ID}:${DATASET_ID} (authorized views; no prompt text; owners only)"
 echo ""
-echo -e "${CYAN}${BOLD}Verification & Next Steps:${NC}"
-echo "  1. As soon as developers execute prompts in Antigravity Hub, CLI, or IDE,"
-echo "     Cloud Logging will automatically stream events to BigQuery."
-echo "  2. BigQuery will auto-create the following partitioned raw tables:"
-echo "       - ${DEST_PROJECT_ID}.${DATASET_ID}.businessaicode_googleapis_com_inference_response"
-echo "       - ${DEST_PROJECT_ID}.${DATASET_ID}.businessaicode_googleapis_com_client_telemetry"
-echo "       - ${DEST_PROJECT_ID}.${DATASET_ID}.businessaicode_googleapis_com_inference_request"
-echo "  3. To verify streaming records in BigQuery, run:"
+echo -e "${CYAN}${BOLD}Access & Next Steps:${NC}"
+echo "  1. Only project owners can read both datasets. To share dashboards:"
+echo "     - Looker Studio: create the data source as an owner with 'Owner's credentials'."
+echo "     - Analysts/groups: BigQuery console → ${DATASET_ID} → Sharing → Permissions →"
+echo "       add the principal as 'BigQuery Data Viewer' (views only; RAW stays locked)."
+echo "  2. As developers use Antigravity Hub, CLI, or IDE, logs stream into ${RAW_DATASET_ID}"
+echo "     and appear in the views immediately (no batch job)."
+if [[ -z "$SINK_EXISTS" ]]; then
+  echo "     Note: a NEW sink takes a few minutes to start routing; logs written in the first"
+  echo "     ~5 minutes after creation may not be exported (observed in testing)."
+fi
+echo "  3. Verify with:"
 echo "       bq query --use_legacy_sql=false \\"
-echo "         'SELECT timestamp, labels.user_id, labels.model, labels.client_name FROM \`${DEST_PROJECT_ID}.${DATASET_ID}.businessaicode_googleapis_com_inference_response\` LIMIT 5;'"
+echo "         'SELECT * FROM \`${DEST_PROJECT_ID}.${DATASET_ID}.v_ge_app_agy_user_summary\` WHERE scope = \"all_users\"'"
 echo ""
