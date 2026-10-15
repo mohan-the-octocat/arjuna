@@ -1,7 +1,7 @@
 # Technical Specification: `ge-app-telemetry`
 
 > [!IMPORTANT]
-> **Partly superseded (2026-10-14).** The storage and privacy design is now: a locked RAW dataset (`ge_app_agy_raw`) plus authorized views (`ge_app_agy_telemetry`) that never return prompt text. The "exclude prompts / Zero Data Retention" sink filter, the prompt audit sink, cost estimates (`flash_discount_applied`, `billing_export_table`) and proposal/resolution metrics described below are **no longer used**. See [`direct-log-sink-to-bq/README.md`](direct-log-sink-to-bq/README.md) and [`views/README.md`](views/README.md) for the current behavior.
+> **Partly superseded (2026-10-14).** The storage and privacy design is now: a locked RAW dataset (`ge_app_agy_raw`) plus authorized views (`ge_app_agy_telemetry`) that never return prompt text. The "exclude prompts / Zero Data Retention" sink filter, the prompt audit sink, cost estimates (`flash_discount_applied`, `billing_export_table`) and proposal/resolution metrics described below are **no longer used**. See [`README.md`](README.md) for the current behavior.
 ## Antigravity Telemetry & Observability Pipeline for Gemini Enterprise
 
 **Version:** 1.1.0  

@@ -1,26 +1,26 @@
 # ==============================================================================
 # Google Antigravity (Gemini Enterprise) - Terraform Variables Example
+# Copy to terraform.tfvars and edit.
 # ==============================================================================
 
-project_id                = "my-ge-project-id"
-destination_project_id    = "my-ge-project-id" # Or central analytics project
-dataset_id                = "ge_app_agy_telemetry"
-dataset_location          = "us-central1"      # e.g. "asia-northeast1", "australia-southeast1"
-sink_name                 = "ge-app-agy-telemetry-sink"
+project_id             = "my-ge-project-id"
+destination_project_id = "my-ge-project-id" # Or a central analytics project
+raw_dataset_id         = "ge_app_agy_raw"       # All fields incl. prompts; owners only
+dataset_id             = "ge_app_agy_telemetry" # Authorized views; no prompt text
+dataset_location       = "us-central1"          # e.g. "asia-northeast1", "EU"
+sink_name              = "ge-app-agy-telemetry-sink"
+
+# RAW retention in days (0 = never expire)
 partition_expiration_days = 90
-exclude_prompt_contents   = true               # Privacy/ZDR mode: excludes prompt/code bodies
 
-# Optional Security Prompt Audit Dataset & Sink (Raw prompts & completions)
-enable_prompt_audit_dataset = false
-prompt_audit_dataset_id     = "ge_app_agy_prompts_audit"
-prompt_audit_sink_name      = "ge-app-agy-prompts-audit-sink"
-prompt_audit_retention_days = 30
-
-# Downstream reader identities granted dataViewer on the dataset
-reader_service_accounts = [
-  # "serviceAccount:looker-studio@my-project.iam.gserviceaccount.com",
-  # "group:finops-analysts@example.com"
+# Read access to the views dataset only (RAW stays owners-only)
+view_readers = [
+  # "group:telemetry-analysts@example.com",
+  # "user:analyst@example.com",
 ]
+
+enable_apis   = true
+allow_destroy = false # true lets `terraform destroy` delete RAW tables and data
 
 resource_labels = {
   "environment"    = "production"

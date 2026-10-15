@@ -56,7 +56,6 @@ PARTITION_EXPIRATION_DAYS=""
 DEPLOYER_SERVICE_ACCOUNT=""
 CONFIG_FILE=""
 HEADLESS=false
-DEPRECATED_FLAGS_USED=()
 
 # ------------------------------------------------------------------------------
 # Helper Functions
@@ -102,9 +101,6 @@ Options:
   --impersonate-sa SA_EMAIL     Deployer Service Account to impersonate (gcloud calls)
   -y, --yes, --headless         Run in non-interactive/headless mode without prompts
   -h, --help                    Display this help message and exit
-
-Deprecated (accepted with a warning, no effect):
-  --exclude-prompts, --enable-prompt-audit, --audit-dataset-id, --audit-sink-name, --audit-retention-days
 
 Examples:
   # 1. Interactive setup with smart defaults:
@@ -161,8 +157,6 @@ PY
       sink_name) [[ -z "$SINK_NAME" ]] && SINK_NAME="$val" ;;
       partition_expiration_days) [[ -z "$PARTITION_EXPIRATION_DAYS" ]] && PARTITION_EXPIRATION_DAYS="$val" ;;
       deployer_service_account) [[ -z "$DEPLOYER_SERVICE_ACCOUNT" ]] && DEPLOYER_SERVICE_ACCOUNT="$val" ;;
-      exclude_prompt_contents|enable_prompt_audit|audit_dataset_id|audit_sink_name|audit_retention_days|flash_discount_applied)
-        DEPRECATED_FLAGS_USED+=("${key} (config)") ;;
     esac
   done <<< "$parsed"
   return 0
@@ -296,12 +290,6 @@ while [[ $# -gt 0 ]]; do
     -l|--location) DATASET_LOCATION="$2"; shift 2 ;;
     -s|--sink-name) SINK_NAME="$2"; shift 2 ;;
     -r|--retention-days) PARTITION_EXPIRATION_DAYS="$2"; shift 2 ;;
-    --exclude-prompts|--enable-prompt-audit)
-      DEPRECATED_FLAGS_USED+=("$1")
-      if [[ -n "${2:-}" && "$2" != -* ]]; then shift 2; else shift 1; fi
-      ;;
-    --audit-dataset-id|--audit-sink-name|--audit-retention-days)
-      DEPRECATED_FLAGS_USED+=("$1"); shift 2 ;;
     --impersonate-sa) DEPLOYER_SERVICE_ACCOUNT="$2"; shift 2 ;;
     -y|--yes|--headless) HEADLESS=true; shift ;;
     -h|--help) usage ;;
@@ -355,9 +343,6 @@ PARTITION_EXPIRATION_DAYS="${PARTITION_EXPIRATION_DAYS:-$DEFAULT_RETENTION_DAYS}
 
 log_info "Active Account : ${ACTIVE_GCLOUD_ACCOUNT:-None}"
 
-for dep in "${DEPRECATED_FLAGS_USED[@]+"${DEPRECATED_FLAGS_USED[@]}"}"; do
-  log_warn "Deprecated option ignored: ${dep}. All fields land in the locked RAW dataset; views never return prompt text."
-done
 
 # ------------------------------------------------------------------------------
 # Interactive Prompting (if not headless)

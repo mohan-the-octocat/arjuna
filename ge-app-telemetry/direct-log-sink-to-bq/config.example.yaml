@@ -1,8 +1,9 @@
 # ==============================================================================
 # Google Antigravity (Gemini Enterprise) - Direct Log Sink Configuration
 # ==============================================================================
-# This configuration file drives both the automated deploy.sh CLI runner and
-# can be used as a reference for Terraform variables.
+# Read by deploy.sh, cleanup.sh and backfill.sh (scalar keys only).
+# Copy to config.yaml (picked up automatically) or pass --config FILE.
+# Terraform uses terraform/terraform.tfvars instead.
 # ==============================================================================
 
 # Source GCP Project ID where Antigravity is active and emitting logs.
@@ -39,21 +40,8 @@ deployer_service_account: ""
 # ------------------------------------------------------------------------------
 # Historical Log Backfill Options (used by backfill.sh)
 # ------------------------------------------------------------------------------
-# Number of past days to query Cloud Logging (max 30 days default retention)
+# Days to look back in Cloud Logging (its _Default bucket keeps 30 days by default)
 lookback_days: 7
 
-# Idempotency / Deduplication: Check target BigQuery table for existing insertIds
-# and skip any records that have already been ingested.
+# Skip entries whose insertId is already in RAW (safe re-runs).
 skip_existing: true
-
-# Optional: List of Reader Service Accounts or user/group emails to grant roles/bigquery.dataViewer
-# on the created BigQuery dataset.
-reader_service_accounts:
-  # - "serviceAccount:looker-studio-reader@my-project.iam.gserviceaccount.com"
-  # - "group:finops-analysts@example.com"
-
-# Resource labels attached to BigQuery dataset for cloud tagging and FinOps governance.
-resource_labels:
-  managed-by: "antigravity-extensions"
-  module: "ge-app-direct-log-sink-to-bq"
-  telemetry-type: "gemini-enterprise-antigravity"
