@@ -1,7 +1,10 @@
 # Google Antigravity in Gemini Enterprise: Direct Log Sink to BigQuery
 `ge-app-telemetry/direct-log-sink-to-bq`
 
-This module routes Google Antigravity developer telemetry from Cloud Logging into a BigQuery dataset (`ge_app_agy_telemetry`).
+This module routes Google Antigravity developer telemetry from Cloud Logging into BigQuery, in two datasets:
+
+> **All logs land in a locked raw dataset that only project owners can read. Dashboards use a separate views dataset that never returns prompt text.**
+
 
 ---
 
@@ -19,18 +22,22 @@ This module routes Google Antigravity developer telemetry from Cloud Logging int
 │       Resource: businessaicode.googleapis.com/BAICInstance            │
 │       Streams: inference_response, client_telemetry, inference_request│
 └───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                                    ▼ (Push Log Router Sink)
+                                    │ Log Router sink (no exclusions)
+                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│           Dedicated BigQuery Dataset: `ge_app_agy_telemetry`           │
-│   ├── Partitioned Raw Tables (Daily partition on timestamp)           │
-│   │   ├── businessaicode_googleapis_com_inference_response            │
-│   │   ├── businessaicode_googleapis_com_client_telemetry              │
-│   │   └── businessaicode_googleapis_com_inference_request             │
-│   │                                                                    │
-│   └── Lifecycle & Retention Engine                                     │
-│       ├── 90-Day Auto Long-Term Storage Price Drop ($0.01/GB/mo)        │
-│       └── Auto-Expiring Daily Partitions (default: 90 days)            │
+│  RAW: `ge_app_agy_raw`  – ALL fields incl. prompts & responses          │
+│  3 tables pre-created · daily partitions · retention -r (default 90d)  │
+│  Access: project owners only (+ sink writer, + authorized views)       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ authorized views (read RAW, return no prompt text)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  VIEWS: `ge_app_agy_telemetry`  – no tables, no prompt text             │
+│  v_ge_app_agy_user_summary (7d/90d, per user + all users)              │
+│  v_ge_app_agy_adoption · v_ge_app_agy_trust_quality ·                  │
+│  v_ge_app_agy_token_economics                                          │
+│  v_ge_app_agy_model_summary · v_ge_app_agy_daily_sessions              │
+│  Access: project owners only (+ manual grants, e.g. Looker Studio)     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -42,29 +49,22 @@ Antigravity in Gemini Enterprise emits the following top-level labels on each lo
 * `labels.request_id`: Turn-level execution step ID.
 * `labels.client_name`: Client surface (`antigravity_hub`, `antigravity_cli`, `vscode`).
 * `labels.model`: Model called (`gemini-3.7-flash`).
-* `client_telemetry`: Interaction outcomes (`PROPOSAL_ACCEPTANCE`, `PERMISSION_GRANT` → `ACCEPTED`, `REJECTED`, `MODIFIED`).
+* `client_telemetry`: Interaction outcomes (`PERMISSION_GRANT` → `ACCEPTED`, `REJECTED`).
 
 ---
 
-## Privacy & Security: Dual-Plane Isolation Architecture
+## Privacy & Access Model
 
-Enterprise platform and security teams have two distinct observability requirements:
-1. **Developer Adoption & FinOps Telemetry (Broad Access):** Engineering managers, scrum masters, and FinOps analysts need visibility into DAU, tokens burned, and tool acceptance rates, but must **never** see proprietary developer prompts or code diffs.
-2. **Security & Compliance Auditing (Restricted Access):** Security and compliance officers may require full prompt and completion payloads (`inference_request`, `inference_response`) to investigate security incidents or verify data protection policies.
+| | `ge_app_agy_raw` | `ge_app_agy_telemetry` |
+| :--- | :--- | :--- |
+| Contains | All log fields, **including prompts** (`input.messages[].content`) and **model output** (`output.candidates[].messages[].content`) | Views only: usage, sessions, tokens, permission outcomes. **Never prompt or output text** |
+| Dataset access | Project owners, the sink writer, and the authorized views | Project owners, plus anyone you grant manually |
+| Retention | `--retention-days` (default 90; `0` = never) | n/a (views) |
 
-To enforce the principle of least privilege, `direct-log-sink-to-bq` supports a **Dual-Plane Isolation Architecture**:
-
-* **Primary Telemetry Dataset (`ge_app_agy_telemetry`):**
-  * **Sink:** `ge-app-agy-telemetry-sink`
-  * **Privacy:** Enforces Zero Data Retention (ZDR) exclusion filter (`jsonPayload.contents:*`). Prompts and completions are discarded at the router level.
-  * **Retention:** Default 90 days (configurable up to 365 days).
-  * **Access:** Granted broadly to engineering leads and Looker Studio viewers.
-* **Optional Prompt Audit Dataset (`ge_app_agy_prompts_audit`):**
-  * **Sink:** `ge-app-agy-prompts-audit-sink`
-  * **Ingestion:** Streams `inference_request` and `inference_response` payloads **without** exclusion filters.
-  * **Retention:** Default 30 days (short TTL to minimize data liability).
-  * **Access:** Restricted strictly to designated Security / Compliance officers.
-  * **Deployment Flag:** Pass `--enable-prompt-audit true` to `deploy.sh` or set `enable_prompt_audit_dataset = true` in Terraform.
+* **Lock-down:** `deploy.sh` removes BigQuery's default `projectReaders` / `projectWriters` dataset entries from both datasets, so the basic Viewer role no longer grants read access.
+* **IAM caveat:** project-level **Editor** and **BigQuery Admin / Data Owner / Data Viewer** IAM roles still inherit read access to both datasets; dataset settings cannot remove that. For strict isolation, a separate locked project is planned.
+* **Prompts are stored** for the RAW retention period. There's no "don't store prompts" option in this version.
+* **Why not a log exclusion filter?** Cloud Logging exclusions can only drop whole entries, not individual fields. Response entries mix token counts with model output, so excluding them would lose the telemetry too.
 
 ---
 
@@ -74,13 +74,12 @@ Before deploying, ensure you have:
 
 1. **GCP Permissions:** Your user or deployment service account needs:
    * `roles/logging.configWriter` (to create the Cloud Logging sink)
-   * `roles/bigquery.admin` (to create the dataset and configure sink writer permissions)
+   * `roles/bigquery.admin` (to create datasets, tables and views, and to set dataset access)
    * `roles/serviceusage.serviceUsageAdmin` (if APIs are not yet enabled)
 2. **Local CLI Tools:**
    * `gcloud` CLI (authenticated via `gcloud auth login`)
    * `bq` CLI
-   * `jq` (required for `backfill.sh`)
-   * `terraform` (v1.5+, only if deploying via Method B)
+   * `jq` and `python3` (used by `deploy.sh`, `cleanup.sh` and `backfill.sh`)
 3. **Required APIs:**
    * `logging.googleapis.com`
    * `bigquery.googleapis.com`
@@ -88,58 +87,32 @@ Before deploying, ensure you have:
 
 ---
 
-## Deployment Options
+## Deployment (`deploy.sh`)
 
-You can deploy this pipeline using either the Bash script (`deploy.sh`) or the Terraform module (`terraform/`). Both share the same configuration parameters.
+One command sets up everything:
+- the RAW dataset and its 3 tables (pre-created from `../schemas/raw`);
+- the views dataset;
+- the lock-down of both datasets;
+- the sink → RAW;
+- the 6 authorized views (via `../views/deploy_views.sh`).
 
----
-
-### Method A: Automated CLI Deployer (`deploy.sh`)
-
-The script performs pre-flight checks, verifies APIs, creates the dataset with regional residency, deploys the Log Router sink, and configures IAM permissions.
-
-#### 1. Quick Interactive Mode (Recommended for Pilots / CEs)
-Run the script without arguments. It detects your active `gcloud` context and prompts with smart defaults:
+#### 1. Quick Interactive Mode (Recommended)
 ```bash
 cd ge-app-telemetry/direct-log-sink-to-bq
 ./deploy.sh
 ```
+Prompts: source project, destination project, raw dataset, views dataset, location, sink name, and raw data retention days. A summary and a short notice about where prompts are stored are shown before you confirm.
 
 #### 2. Configuration File Mode
-Create a `config.yaml` from the template and run headlessly:
 ```bash
 cp config.example.yaml config.yaml
-# Edit your project_id, location, etc.
+# Edit project_id, dataset_location, partition_expiration_days, etc.
 ./deploy.sh --config=config.yaml -y
 ```
 
 #### 3. Headless Single-Command Mode (CI/CD)
 ```bash
-./deploy.sh \
-  --project-id="my-ge-project" \
-  --location="asia-northeast1" \
-  --dataset-id="ge_app_agy_telemetry" \
-  --retention-days=90 \
-  --exclude-prompts=true \
-  -y
-```
-
-#### 4. Full Command with All Optional Arguments
-For complete declarative control, all optional parameters can be explicitly supplied:
-```bash
-./deploy.sh \
-  --project-id "my-ge-project" \
-  --dest-project-id "my-ge-project" \
-  --dataset-id "ge_app_agy_telemetry" \
-  --location "us-central1" \
-  --sink-name "ge-app-agy-telemetry-sink" \
-  --retention-days 90 \
-  --exclude-prompts true \
-  --enable-prompt-audit true \
-  --audit-dataset-id "ge_app_agy_prompts_audit" \
-  --audit-sink-name "ge-app-agy-prompts-audit-sink" \
-  --audit-retention-days 30 \
-  --headless
+./deploy.sh --project-id "my-ge-project" --location "asia-northeast1" --retention-days 365 -y
 ```
 
 #### CLI Flag Reference
@@ -147,120 +120,80 @@ For complete declarative control, all optional parameters can be explicitly supp
 | Flag | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--project-id ID` | `-p` | Active `gcloud` project | Source GCP Project ID where Antigravity / Gemini Enterprise is active. |
-| `--dest-project-id ID` | `-d` | Same as `project-id` | Destination GCP Project ID hosting BigQuery (for multi-project telemetry). |
-| `--dataset-id ID` | | `ge_app_agy_telemetry` | Primary BigQuery telemetry dataset identifier. |
-| `--location REGION` | `-l` | `us-central1` | Regional or multi-regional residency location for BigQuery datasets. |
-| `--sink-name NAME` | `-s` | `ge-app-agy-telemetry-sink` | Cloud Logging Log Router Sink name. |
-| `--retention-days DAYS` | `-r` | `90` | Daily partition lifespan in days (`0` = never expire). |
-| `--exclude-prompts BOOL` | | `true` | Exclude raw prompt text and code diffs from the primary dataset. |
-| `--enable-prompt-audit BOOL` | | `false` | Deploy secondary isolated dataset for raw prompts/responses (SecOps). |
-| `--audit-dataset-id ID` | | `ge_app_agy_prompts_audit` | Dedicated BigQuery dataset ID for raw prompt auditing. |
-| `--audit-sink-name NAME` | | `ge-app-agy-prompts-audit-sink` | Cloud Logging sink identifier for prompt auditing. |
-| `--audit-retention-days DAYS`| | `30` | Partition lifespan in days for the prompt audit dataset. |
-| `--impersonate-sa EMAIL` | | *(None)* | Service Account to impersonate during deployment. |
+| `--dest-project-id ID` | `-d` | Same as `project-id` | Destination GCP Project ID hosting BigQuery. |
+| `--raw-dataset-id ID` | | `ge_app_agy_raw` | RAW dataset (all fields incl. prompts; owners only). |
+| `--dataset-id ID` | | `ge_app_agy_telemetry` | Views dataset (no prompt text; owners only). |
+| `--location REGION` | `-l` | `us-central1` | Regional or multi-regional residency for both datasets. |
+| `--sink-name NAME` | `-s` | `ge-app-agy-telemetry-sink` | Cloud Logging Log Router sink name. |
+| `--retention-days DAYS` | `-r` | `90` | RAW daily partition lifespan in days (`0` = never expire). Values under 90 shorten the 90-day window in `v_ge_app_agy_user_summary` (a warning is shown). |
+| `--impersonate-sa EMAIL` | | *(None)* | Service Account to impersonate during deployment (gcloud calls). |
 | `--config FILE` | `-c` | *(None)* | Path to YAML/JSON configuration file. |
-| `--headless` / `--yes` | `-y` | `false` | Run non-interactively without prompt pauses. |
+| `--headless` / `--yes` | `-y` | `false` | Run non-interactively. |
 | `--help` | `-h` | | Display help message and exit. |
+| `--exclude-prompts`, `--enable-prompt-audit`, `--audit-*` | | | **Deprecated, ignored** (warning shown). |
 
----
+**Re-running `deploy.sh` is safe:**
+- existing datasets and tables are kept, and missing schema fields are added;
+- the lock and the view authorizations are re-applied;
+- views are replaced;
+- a legacy exclusion on the sink and a legacy `ge-app-agy-prompts-audit-sink` are removed.
 
-### Method B: Production Terraform Module (`terraform/`)
+**Upgrading from the previous layout:** if `ge_app_agy_telemetry` still contains **tables** from an earlier version, `deploy.sh` stops and prints migration steps. Those tables may contain prompts.
 
-For enterprise platform teams managing infrastructure via GitOps:
+### Sharing dashboards
+Both datasets are owner-only by default. To share:
+* **Looker Studio:** create the BigQuery data source as a project owner with **Owner's credentials**. Viewers then see the charts without BigQuery access.
+* **Analysts / groups:** grant **BigQuery Data Viewer** on `ge_app_agy_telemetry` only (BigQuery console → dataset → *Sharing* → *Permissions*). RAW stays locked.
+* **Local web dashboard** (`../dashboards/local-web`): run `fetch_data.sh` as a project owner.
 
-1. Navigate to the terraform directory:
-   ```bash
-   cd ge-app-telemetry/direct-log-sink-to-bq/terraform
-   ```
-2. Copy the example variables:
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   ```
-3. Update `terraform.tfvars` with your project parameters:
-   ```hcl
-   project_id                = "my-ge-project"
-   dataset_id                = "ge_app_agy_telemetry"
-   dataset_location          = "asia-northeast1"
-   partition_expiration_days = 90
-   exclude_prompt_contents   = true
-   ```
-4. Deploy:
-   ```bash
-   terraform init
-   terraform plan
-   terraform apply
-   ```
+### Terraform (`terraform/`)
 
----
-
-## Privacy and Prompt Exclusion Mode
-
-By default, `exclude_prompt_contents = true` is enabled.
-
-When enabled, the sink applies an exclusion rule:
-```sql
-logName =~ "businessaicode.googleapis.com%2Finference_response"
-AND jsonPayload.contents:*
-```
-* **What is persisted:** Token counts (`metadata.totalTokenCount`), model IDs, developer email, trajectory IDs, timestamps, and interaction outcomes.
-* **What is excluded:** User prompt strings, conversational history, and generated code diffs.
+> [!WARNING]
+> The Terraform module has **not yet** been updated to this layout. It still deploys a single dataset that stores prompts. Use `deploy.sh` until a follow-up PR lands.
 
 ---
 
 ## Verification and Testing
 
 ### Step 1: Verify Sink Status
-Check that the Log Router sink exists and inspect its generated writer identity:
 ```bash
 gcloud logging sinks describe ge-app-agy-telemetry-sink \
   --format="yaml(name,destination,writerIdentity,exclusions)"
 ```
+`destination` should end with `/datasets/ge_app_agy_raw`, with no exclusions.
 
 ### Step 2: Trigger an Event in Antigravity
-Open **Antigravity 2.0 Hub** or run a command in **Antigravity CLI**:
 ```bash
 agy "Summarize the files in this directory"
 ```
 
-### Step 3: Verify Streaming Tables in BigQuery
-Within 15–30 seconds of running an Antigravity prompt or CLI command, BigQuery will auto-provision the partitioned tables:
+### Step 3: Verify Tables, Views and Access
 ```bash
-bq ls <PROJECT_ID>:ge_app_agy_telemetry
+bq ls <PROJECT_ID>:ge_app_agy_raw          # 3 businessaicode_googleapis_com_* tables
+bq ls <PROJECT_ID>:ge_app_agy_telemetry    # 6 v_ge_app_agy_* views, no tables
+bq show --format=prettyjson <PROJECT_ID>:ge_app_agy_raw | jq '.access'
+# expect: OWNER projectOwners, WRITER sink writer, 6 authorized view entries; no projectReaders/projectWriters
 ```
-You should see:
-* `businessaicode_googleapis_com_inference_response`
-* `businessaicode_googleapis_com_client_telemetry`
-* `businessaicode_googleapis_com_inference_request`
+Log entries usually reach RAW within about a minute and appear in the views immediately (there's no batch job).
 
-### Step 4: Run a Verification Query (Telemetry Plane)
+> [!NOTE]
+> A **newly created** sink takes a few minutes to start routing. In testing, logs written in the first ~3 minutes after the sink was created were never exported, while everything after that arrived completely. Wait ~5 minutes after the first deployment before generating test traffic.
+
+### Step 4: Run a Verification Query (Views)
 ```bash
 bq query --use_legacy_sql=false '
-SELECT 
-  timestamp,
-  labels.user_id,
-  labels.client_name,
-  labels.model,
-  labels.trajectory_id,
-  jsonpayload_v1_inferenceresponselog.metadata.totaltokencount AS total_tokens
-FROM 
-  `<PROJECT_ID>.ge_app_agy_telemetry.businessaicode_googleapis_com_inference_response`
-ORDER BY timestamp DESC
-LIMIT 5;
+SELECT window_days, active_users, inferences, trajectories, total_tokens, permission_grant_rate
+FROM `<PROJECT_ID>.ge_app_agy_telemetry.v_ge_app_agy_user_summary`
+WHERE scope = "all_users"
+ORDER BY window_days;
 '
 ```
 
-### Step 4b: Run a Verification Query (Prompt Audit Plane, if enabled)
+### Step 4b: Inspect Prompts (Owners Only, RAW)
 ```bash
 bq query --use_legacy_sql=false '
-SELECT 
-  timestamp,
-  labels.user_id,
-  labels.model,
-  labels.client_name,
-  m.author,
-  m.content AS prompt_text
-FROM 
-  `<PROJECT_ID>.ge_app_agy_prompts_audit.businessaicode_googleapis_com_inference_request`,
+SELECT timestamp, labels.user_id, labels.model, m.author, m.content AS prompt_text
+FROM `<PROJECT_ID>.ge_app_agy_raw.businessaicode_googleapis_com_inference_request`,
   UNNEST(jsonpayload_v1_inferencerequestlog.input.messages) m
 ORDER BY timestamp DESC
 LIMIT 5;
@@ -273,12 +206,14 @@ LIMIT 5;
 
 Cloud Logging Log Router Sinks stream events that arrive after sink deployment; they do not export older logs retroactively.
 
-Because Cloud Logging retains logs in the `_Default` bucket for 30 days by default, the included `backfill.sh` utility can backfill previous developer logs into `ge_app_agy_telemetry`.
+Because Cloud Logging retains logs in the `_Default` bucket for 30 days by default, the included `backfill.sh` utility can load previous developer logs.
+
+> [!WARNING]
+> `backfill.sh` has **not yet** been updated for this layout. In this layout it must target the RAW dataset (`-d ge_app_agy_raw --exclude-prompts false`). It also has known issues: it drops token and metadata fields, and it can create duplicates when it fails partway (see the code review). Use it with care until it's fixed.
 
 ### Resiliency and Deduplication
 * **Ingestion-Level Deduplication:** `backfill.sh` queries the target BigQuery table for existing `insertId` values within the time window. Any record already present in BigQuery is skipped before loading (`--skip-existing=true`), preventing duplicate insertions if re-run.
-* **View-Level Deduplication:** Analytical views in Track 2 use `QUALIFY ROW_NUMBER() OVER(PARTITION BY insertId ORDER BY timestamp DESC) = 1` as a secondary safeguard against streaming retries.
-* **Privacy and ZDR:** Strips prompt bodies and code diffs unless explicitly overridden.
+* **View-Level Deduplication:** All views use `QUALIFY ROW_NUMBER() OVER (PARTITION BY insertId, timestamp ORDER BY receiveTimestamp DESC) = 1` as a safeguard against streaming retries.
 
 ### Backfill Usage Examples
 
@@ -286,18 +221,18 @@ Because Cloud Logging retains logs in the `_Default` bucket for 30 days by defau
 # 1. Preview backfill for the past 7 days without writing (Dry Run):
 ./backfill.sh --dry-run
 
-# 2. Backfill the past 7 days with duplicate skipping:
-./backfill.sh -p my-ge-project -n 7 -y
+# 2. Backfill the past 7 days into RAW with duplicate skipping:
+./backfill.sh -p my-ge-project -d ge_app_agy_raw --exclude-prompts false -n 7 -y
 
 # 3. Backfill specific date/time range:
 ./backfill.sh \
-  -p my-ge-project \
+  -p my-ge-project -d ge_app_agy_raw --exclude-prompts false \
   --start-time="2026-08-26T00:00:00Z" \
   --end-time="2026-09-02T12:00:00Z" \
   -y
 
 # 4. Backfill a specific stream (e.g., client telemetry only):
-./backfill.sh -s client_telemetry -n 14 -y
+./backfill.sh -d ge_app_agy_raw -s client_telemetry -n 14 -y
 ```
 
 ### Backfill Flag Reference
@@ -306,13 +241,13 @@ Because Cloud Logging retains logs in the `_Default` bucket for 30 days by defau
 | :--- | :--- | :--- |
 | `-c`, `--config FILE` | `config.yaml` | Path to YAML configuration file |
 | `-p`, `--project-id ID` | Active `gcloud` project | Source GCP project hosting Cloud Logging & BigQuery |
-| `-d`, `--dataset-id ID` | `ge_app_agy_telemetry` | Target BigQuery dataset |
+| `-d`, `--dataset-id ID` | `ge_app_agy_telemetry` | Target BigQuery dataset (**use `ge_app_agy_raw`**) |
 | `-n`, `--days DAYS` | `7` | Number of lookback days (up to 30) |
 | `--start-time RFC3339` | Calculated from `--days` | Custom ISO/RFC3339 start timestamp |
 | `--end-time RFC3339` | Current UTC time | Custom ISO/RFC3339 end timestamp |
 | `-s`, `--streams STREAM` | `all` | Target stream (`all`, `inference_response`, `client_telemetry`, `inference_request`) |
 | `--skip-existing BOOL` | `true` | Drops records matching existing `insertId` in BigQuery |
-| `--exclude-prompts BOOL` | `true` | Excludes raw prompt bodies/diffs for Zero Data Retention |
+| `--exclude-prompts BOOL` | `true` | Strips prompt bodies (set `false` for RAW, which keeps all fields) |
 | `--dry-run` | `false` | Scans and prints record counts without loading to BigQuery |
 | `-y`, `--yes` | `false` | Headless execution mode |
 
@@ -320,31 +255,22 @@ Because Cloud Logging retains logs in the `_Default` bucket for 30 days by defau
 
 ## Teardown and Cleanup
 
-To remove the dataset, partitioned tables, and logging sink:
-
-### Via Cleanup Script
 ```bash
 # Interactive confirmation:
 ./cleanup.sh
 
-# Non-interactive force teardown (telemetry dataset & sink):
-./cleanup.sh -p my-ge-project --dataset-id ge_app_agy_telemetry -y -f
+# Non-interactive teardown (sink, RAW dataset, views dataset):
+./cleanup.sh -p my-ge-project -y -f
 
-# Teardown including isolated prompt audit sink & dataset:
-./cleanup.sh -p my-ge-project --dataset-id ge_app_agy_telemetry --clean-audit -y -f
+# Also remove leftovers of the earlier curation design, if you deployed it:
+./cleanup.sh -p my-ge-project --clean-audit --clean-sa -y -f
 ```
-
-### Via Terraform
-```bash
-cd terraform
-terraform destroy
-```
+`cleanup.sh` aborts with an error if your credentials have expired or a lookup fails. It never reports such failures as "already deleted".
 
 ---
 
-## Next Steps: Analytical Views and Dashboards
+## Next Steps: Dashboards
 
-Once raw telemetry is streaming into `ge_app_agy_telemetry`:
-* **Track 2:** Analytical SQL data marts (`v_ge_app_agy_adoption`, `v_ge_app_agy_trust_quality`, `v_ge_app_agy_token_economics`).
-* **Track 3:** Dashboards (Looker Studio executive reporting & Local Web Dashboard).
-
+Once logs are streaming into `ge_app_agy_raw`:
+* **Views:** see [`../views/README.md`](../views/README.md) for the catalog and sample queries.
+* **Dashboards:** Looker Studio (owner's credentials) and the Local Web Dashboard (`../dashboards/local-web`). Dashboard updates for the new columns are a follow-up.

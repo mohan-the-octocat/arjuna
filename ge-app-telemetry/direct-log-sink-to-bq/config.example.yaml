@@ -13,39 +13,25 @@ project_id: ""
 # Defaults to the same as project_id. Set differently for central logging/analytics projects.
 destination_project_id: ""
 
-# Dedicated BigQuery Dataset identifier.
+# RAW dataset: receives ALL log fields, including prompts and model responses.
+# Locked to project owners (default reader/writer entries removed).
+raw_dataset_id: "ge_app_agy_raw"
+
+# Views dataset: authorized views over RAW that never return prompt text.
+# Dashboards and Looker Studio read from here. Also locked to project owners.
 # Convention: ge_app_agy_telemetry for GE App; geap_agy_telemetry for standalone Agent Platform.
 dataset_id: "ge_app_agy_telemetry"
 
-# Physical data residency location for the BigQuery dataset.
+# Physical data residency location for the BigQuery datasets.
 # Examples: "us-central1", "asia-northeast1" (Tokyo), "australia-southeast1" (Sydney), "europe-west1", "EU", "US"
 dataset_location: "us-central1"
 
-# Cloud Logging Log Router sink name.
+# Cloud Logging Log Router sink name (routes to the RAW dataset).
 sink_name: "ge-app-agy-telemetry-sink"
 
-# Daily partition lifespan in days before automatic deletion by BigQuery.
-# Set to 90 for standard enterprise retention, 180 or 365 for extended, 0 to disable expiration.
+# RAW daily partition lifespan in days before automatic deletion by BigQuery.
+# Applies to all raw data, including prompts. 90 = standard, 365+ for extended history, 0 = never expire.
 partition_expiration_days: 90
-
-# Privacy & Zero Data Retention (ZDR) Gate:
-# If true, excludes conversational prompt text and generated code diffs (jsonPayload.contents)
-# from being persisted to BigQuery. Operational metrics, tokens, and telemetry remain 100% intact.
-exclude_prompt_contents: true
-
-# Optional Security & Compliance Prompt Audit Dataset:
-# If true, provisions an isolated second BigQuery dataset and sink to store raw prompts
-# and model completions (inference_request & inference_response) for compliance auditing.
-enable_prompt_audit: false
-audit_dataset_id: "ge_app_agy_prompts_audit"
-audit_sink_name: "ge-app-agy-prompts-audit-sink"
-audit_retention_days: 30
-
-# FinOps: Set true if customer has the official 50% promotional discount on Gemini Flash models.
-flash_discount_applied: true
-
-# Optional: Fully-qualified Cloud Billing export table (e.g., "my-billing-project.billing.gcp_billing_export_resource_v1_XXXXXX").
-billing_export_table: ""
 
 # Optional: Service Account to impersonate during deployment (for CI/CD or elevated deployment runners).
 deployer_service_account: ""
