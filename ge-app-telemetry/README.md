@@ -41,7 +41,9 @@ For background on Google Antigravity enterprise features, models, and administra
 │   ├── v_ge_app_agy_user_summary    (7d / 90d per user + all users)     │
 │   ├── v_ge_app_agy_adoption        (inferences, sessions per day)      │
 │   ├── v_ge_app_agy_trust_quality   (permission accept/reject per day)  │
-│   └── v_ge_app_agy_token_economics (token counters by type per day)    │
+│   ├── v_ge_app_agy_token_economics (token counters by type per day)    │
+│   ├── v_ge_app_agy_model_summary   (7d / 90d per model + all models)   │
+│   └── v_ge_app_agy_daily_sessions  (exact sessions per day, any filter)│
 └───────────────────┬────────────────────────────────┬───────────────────┘
                     │                                │
                     ▼                                ▼
@@ -76,8 +78,12 @@ ge-app-telemetry/
 │   ├── 01_v_ge_app_agy_adoption.sql        # Daily adoption
 │   ├── 02_v_ge_app_agy_trust_quality.sql   # Daily permission accept/reject
 │   ├── 03_v_ge_app_agy_token_economics.sql # Daily token counters by type
+│   ├── 04_v_ge_app_agy_model_summary.sql   # Per-model 7d/90d summary + all-models rows
+│   ├── 05_v_ge_app_agy_daily_sessions.sql  # Exact daily sessions for any user/client/model filter
 │   ├── deploy_views.sh                     # View deployer + RAW authorization
 │   └── README.md                           # View catalog & sample queries
+│
+├── tools/view-validation/                  # Synthetic-data test: checks every view against known answers
 │
 └── dashboards/                             # Track 3: Reporting & Visualizations
     └── local-web/                          # Standalone Executive Dashboard
@@ -102,7 +108,7 @@ cd ge-app-telemetry/direct-log-sink-to-bq
 # Headless deployment:
 ./deploy.sh -p <PROJECT_ID> -l us-central1 -r 90 -y
 ```
-This single command creates `ge_app_agy_raw` and its tables, creates `ge_app_agy_telemetry`, locks both to project owners, points the sink at RAW, and deploys and authorizes the 4 views. See [`direct-log-sink-to-bq/README.md`](direct-log-sink-to-bq/README.md).
+This single command creates `ge_app_agy_raw` and its tables, creates `ge_app_agy_telemetry`, locks both to project owners, points the sink at RAW, and deploys and authorizes the 6 views. See [`direct-log-sink-to-bq/README.md`](direct-log-sink-to-bq/README.md).
 
 ### Step 2: Visualize & Report
 
@@ -128,7 +134,7 @@ cd ../dashboards/local-web
 ./stop.sh
 ```
 > [!NOTE]
-> The local dashboard has no login and listens on all network interfaces. Use it on trusted machines only. Dashboard updates for the new view columns (and removal of cost charts) are a follow-up.
+> The local dashboard has no login and listens on all network interfaces. Use it on trusted machines only. Tabs: Overview · Adoption & Enablement · Fleet & Models · Usage & Tokens · Value & Quality (see [`dashboards/local-web/README.md`](dashboards/local-web/README.md)).
 
 ---
 
@@ -207,6 +213,8 @@ Always removed: the sink, the RAW dataset and the views dataset. It aborts if `g
 | **`v_ge_app_agy_adoption`** | Day × user × client × version × model | Inferences, sessions, inferences per session, active hours |
 | **`v_ge_app_agy_trust_quality`** | Day × user × client × model | Client events, sessions, finished turns, permission requests / accepted / rejected / rate |
 | **`v_ge_app_agy_token_economics`** | Day × user × client × model × experience | Total, prompt, output (candidates), thinking, and cached tokens; avg/min/max per inference |
+| **`v_ge_app_agy_model_summary`** | 7d / 90d window × model, plus all models | Users, inferences, sessions, tokens by type, avg/max per inference, experiences, clients, inference & token share |
+| **`v_ge_app_agy_daily_sessions`** | Day × every user/client/model combination (`'(all)'` = combined) | Exact daily sessions, active users, inferences |
 
 No cost estimates, proposal metrics or "resolution rates" are reported. See [`views/README.md`](views/README.md) for the reasons.
 
@@ -217,5 +225,6 @@ No cost estimates, proposal metrics or "resolution rates" are reported. See [`vi
 1. **Locked raw, prompt-free views:** all fields, including prompts, land in `ge_app_agy_raw`, which only project owners can read. Consumers use authorized views that never return prompt text.
 2. **Honest privacy statement:** prompts are stored for the RAW retention period. Project-level Editor and BigQuery Admin IAM roles still inherit read access. Stricter options (a separate locked project, a "don't store prompts" mode) are planned.
 3. **Deterministic fresh installs:** RAW tables are pre-created with the sink's schema, so views deploy before any traffic arrives.
-4. **Deduplication in every view:** `QUALIFY ROW_NUMBER() OVER (PARTITION BY insertId, timestamp ORDER BY receiveTimestamp DESC) = 1`.
-5. **Facts only:** views report logged counters and events. There are no cost or billing estimates.
+4. **Verified views:** `tools/view-validation/run.sh` checks every view against synthetic data with known answers.
+5. **Deduplication in every view:** `QUALIFY ROW_NUMBER() OVER (PARTITION BY insertId, timestamp ORDER BY receiveTimestamp DESC) = 1`.
+6. **Facts only:** views report logged counters and events. There are no cost or billing estimates.

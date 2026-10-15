@@ -41,6 +41,19 @@ BigQuery views for Google Antigravity telemetry in Gemini Enterprise. Each view 
 * **Columns:** `event_date`, `user_email`, `client_name`, `model`, `experience`, `total_inferences`, `trajectories`, `total_tokens`, `prompt_tokens`, `candidates_tokens`, `thoughts_tokens`, `cached_content_tokens`, `avg_tokens_per_inference`, `min_tokens_per_inference`, `max_tokens_per_inference`.
 * Token columns are raw sums of the logged counters. **No cost or billing estimates** are computed.
 
+### 4. `v_ge_app_agy_model_summary`
+* **Grain:** one row per `window_days` (rolling **7** and **90** days) × model, **plus an `all_models` row per window**. **Source:** `inference_response`.
+* **Columns:** `window_days`, `scope`, `model`, `active_users`, `inferences`, `trajectories`, `active_days`, `total_tokens`, `prompt_tokens`, `candidates_tokens`, `thoughts_tokens`, `cached_content_tokens`, `avg_tokens_per_inference`, `max_tokens_per_inference`, `experiences`, `clients`, `first_seen`, `last_seen`, `inference_share`, `token_share`.
+* Exact distinct users and sessions per model per window.
+* No permission metrics: permission events carry no `labels.model`.
+* Flash-lite models are Antigravity **background calls**. They have no session id, so they show 0 sessions.
+
+### 5. `v_ge_app_agy_daily_sessions`
+* **Grain:** UTC day × **every combination** of user, client and model, where `'(all)'` means "all values combined". **Source:** `inference_response`.
+* **Columns:** `event_date`, `user_email`, `client_name`, `model`, `sessions`, `active_users`, `inferences`, `session_inferences`.
+* Gives **exact** daily sessions and users for any filter combination: pick the row whose dimensions match the filters, using `'(all)'` for each unfiltered dimension. Never sum `sessions` across rows.
+* `session_inferences` excludes background calls without a session id.
+
 ### Not reported (by design)
 | Metric | Reason |
 | :--- | :--- |
@@ -51,8 +64,11 @@ BigQuery views for Google Antigravity telemetry in Gemini Enterprise. Each view 
 ---
 
 ## Caveats
-* **Sessions across days:** `trajectories` is a distinct count per row. Summing daily rows can double count sessions that span midnight. Use `v_ge_app_agy_user_summary` for window totals.
+* **Sessions across days:** `trajectories` is a distinct count per row. Summing daily rows can double count sessions that span midnight or several models. Use `v_ge_app_agy_daily_sessions` for exact daily sessions, and the summary views for window totals.
 * **Retention:** if RAW retention (`deploy.sh -r`) is under 90 days, the 90-day window contains less data.
+
+## Validation
+`../tools/view-validation/run.sh -p <PROJECT_ID>` loads synthetic data with known answers into isolated datasets and checks every view exactly. Run it after changing any view.
 
 ---
 

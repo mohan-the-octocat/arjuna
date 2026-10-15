@@ -36,6 +36,7 @@ This module routes Google Antigravity developer telemetry from Cloud Logging int
 │  v_ge_app_agy_user_summary (7d/90d, per user + all users)              │
 │  v_ge_app_agy_adoption · v_ge_app_agy_trust_quality ·                  │
 │  v_ge_app_agy_token_economics                                          │
+│  v_ge_app_agy_model_summary · v_ge_app_agy_daily_sessions              │
 │  Access: project owners only (+ manual grants, e.g. Looker Studio)     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -93,7 +94,7 @@ One command sets up everything:
 - the views dataset;
 - the lock-down of both datasets;
 - the sink → RAW;
-- the 4 authorized views (via `../views/deploy_views.sh`).
+- the 6 authorized views (via `../views/deploy_views.sh`).
 
 #### 1. Quick Interactive Mode (Recommended)
 ```bash
@@ -169,9 +170,9 @@ agy "Summarize the files in this directory"
 ### Step 3: Verify Tables, Views and Access
 ```bash
 bq ls <PROJECT_ID>:ge_app_agy_raw          # 3 businessaicode_googleapis_com_* tables
-bq ls <PROJECT_ID>:ge_app_agy_telemetry    # 4 v_ge_app_agy_* views, no tables
+bq ls <PROJECT_ID>:ge_app_agy_telemetry    # 6 v_ge_app_agy_* views, no tables
 bq show --format=prettyjson <PROJECT_ID>:ge_app_agy_raw | jq '.access'
-# expect: OWNER projectOwners, WRITER sink writer, 4 authorized view entries; no projectReaders/projectWriters
+# expect: OWNER projectOwners, WRITER sink writer, 6 authorized view entries; no projectReaders/projectWriters
 ```
 Log entries usually reach RAW within about a minute and appear in the views immediately (there's no batch job).
 

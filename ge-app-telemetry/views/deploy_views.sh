@@ -8,6 +8,8 @@
 # 1. v_ge_app_agy_adoption
 # 2. v_ge_app_agy_trust_quality
 # 3. v_ge_app_agy_token_economics
+# 4. v_ge_app_agy_model_summary
+# 5. v_ge_app_agy_daily_sessions
 # Each view is added to the RAW dataset's access list (type: view) so owners of
 # the views dataset can query it without direct access to RAW.
 # ==============================================================================
@@ -257,11 +259,16 @@ log_info "Target Project : ${PROJECT_ID}"
 log_info "Views Dataset  : ${DATASET_ID}"
 log_info "RAW Dataset    : ${RAW_DATASET_ID}"
 
-# Verify datasets exist
+# Verify datasets exist (distinguish "not found" from auth/API errors)
 for ds in "${DATASET_ID}" "${RAW_DATASET_ID}"; do
-  if ! bq show ${IMPERSONATE_FLAG} "${PROJECT_ID}:${ds}" &>/dev/null; then
-    log_error "BigQuery dataset ${PROJECT_ID}:${ds} does not exist."
-    log_error "Please deploy the datasets first using deploy.sh in direct-log-sink-to-bq/."
+  if ! ds_out=$(bq show ${IMPERSONATE_FLAG} "${PROJECT_ID}:${ds}" 2>&1); then
+    if grep -q "Not found" <<< "${ds_out}"; then
+      log_error "BigQuery dataset ${PROJECT_ID}:${ds} does not exist."
+      log_error "Please deploy the datasets first using deploy.sh in direct-log-sink-to-bq/."
+    else
+      log_error "Could not check dataset ${PROJECT_ID}:${ds}: ${ds_out}"
+      log_error "Check your gcloud credentials ('gcloud auth login') and permissions."
+    fi
     exit 1
   fi
 done
@@ -272,6 +279,8 @@ VIEW_FILES=(
   "01_v_ge_app_agy_adoption.sql"
   "02_v_ge_app_agy_trust_quality.sql"
   "03_v_ge_app_agy_token_economics.sql"
+  "04_v_ge_app_agy_model_summary.sql"
+  "05_v_ge_app_agy_daily_sessions.sql"
 )
 VIEW_NAMES=()
 
