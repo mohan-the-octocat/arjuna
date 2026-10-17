@@ -3,9 +3,9 @@
 # ==============================================================================
 # Same layout as ../deploy.sh:
 #   1. RAW dataset (default ge_app_agy_raw): ALL log fields incl. prompts and
-#      responses. Owners only. Tables pre-created from ../../schemas/raw/*.json.
+#      responses. Owners only. Tables pre-created from ../schemas/raw/*.json.
 #   2. Views dataset (default ge_app_agy_telemetry): authorized views over RAW
-#      (../../views/*.sql) that never return prompt text. Owners only, plus
+#      (../views/*.sql) that never return prompt text. Owners only, plus
 #      optional readers (var.view_readers).
 #   3. Cloud Logging sink -> RAW (no exclusions). Its writer identity gets
 #      WRITER on RAW only.
@@ -21,8 +21,8 @@ locals {
 
   partition_expiration_ms = var.partition_expiration_days > 0 ? var.partition_expiration_days * 86400 * 1000 : null
 
-  schema_dir = "${path.module}/../../schemas/raw"
-  views_dir  = "${path.module}/../../views"
+  schema_dir = "${path.module}/../schemas/raw"
+  views_dir  = "${path.module}/../views"
 
   table_prefix = "businessaicode_googleapis_com_"
   raw_tables   = toset(["inference_request", "inference_response", "client_telemetry"])

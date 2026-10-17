@@ -5,9 +5,9 @@
 # Automates the creation of:
 # 1. RAW BigQuery dataset (ge_app_agy_raw) with regional residency and daily
 #    partition expiration. Holds ALL log fields incl. prompts and responses.
-#    Tables are pre-created from ../schemas/raw/*.json.
+#    Tables are pre-created from schemas/raw/*.json.
 # 2. Views BigQuery dataset (ge_app_agy_telemetry) holding authorized views over
-#    RAW that never return prompt text (deployed via ../views/deploy_views.sh).
+#    RAW that never return prompt text (deployed via views/deploy_views.sh).
 # 3. Lock-down: the default projectReaders/projectWriters access entries are
 #    removed from BOTH datasets, so only project owners have dataset access.
 # 4. Cloud Logging Router Sink (ge-app-agy-telemetry-sink) targeting
@@ -28,8 +28,8 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCHEMA_DIR="${SCRIPT_DIR}/../schemas/raw"
-VIEWS_DIR="${SCRIPT_DIR}/../views"
+SCHEMA_DIR="${SCRIPT_DIR}/schemas/raw"
+VIEWS_DIR="${SCRIPT_DIR}/views"
 
 # ------------------------------------------------------------------------------
 # Default Values (Following Antigravity Enterprise Conventions)
@@ -80,7 +80,7 @@ print_header() {
   echo -e "${CYAN}${BOLD}"
   echo "=============================================================================="
   echo " Google Antigravity (Gemini Enterprise) - Direct Log Sink Deployer"
-  echo " Module: ge-app-telemetry / direct-log-sink-to-bq"
+  echo " Module: ge-app-telemetry (Cloud Logging -> BigQuery)"
   echo "=============================================================================="
   echo -e "${NC}"
 }

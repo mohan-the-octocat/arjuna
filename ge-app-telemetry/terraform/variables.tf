@@ -88,7 +88,7 @@ variable "resource_labels" {
   type        = map(string)
   default = {
     "managed-by"     = "antigravity-extensions"
-    "module"         = "ge-app-direct-log-sink-to-bq"
+    "module"         = "ge-app-telemetry"
     "telemetry-type" = "gemini-enterprise-antigravity"
   }
 }

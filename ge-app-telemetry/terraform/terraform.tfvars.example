@@ -25,6 +25,6 @@ allow_destroy = false # true lets `terraform destroy` delete RAW tables and data
 resource_labels = {
   "environment"    = "production"
   "managed-by"     = "antigravity-extensions"
-  "module"         = "ge-app-direct-log-sink-to-bq"
+  "module"         = "ge-app-telemetry"
   "telemetry-type" = "gemini-enterprise-antigravity"
 }

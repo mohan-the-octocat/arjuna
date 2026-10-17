@@ -81,7 +81,7 @@ print_header() {
   echo -e "${CYAN}${BOLD}"
   echo "=============================================================================="
   echo " Google Antigravity (Gemini Enterprise) - Historical Log Backfill Utility"
-  echo " Module: ge-app-telemetry / direct-log-sink-to-bq"
+  echo " Module: ge-app-telemetry (Cloud Logging -> BigQuery)"
   echo "=============================================================================="
   echo -e "${NC}"
 }
