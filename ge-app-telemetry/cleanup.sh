@@ -40,7 +40,6 @@ RAW_DATASET_ID=""
 SINK_NAME=""
 CONFIG_FILE=""
 HEADLESS=false
-FORCE=false
 DEPLOYER_SERVICE_ACCOUNT=""
 
 # ------------------------------------------------------------------------------
@@ -82,7 +81,7 @@ Options:
   --raw-dataset-id ID           RAW dataset to delete (default: ${DEFAULT_RAW_DATASET_ID})
   --dataset-id ID               Views dataset to delete (default: ${DEFAULT_DATASET_ID})
   -s, --sink-name NAME          Cloud Logging sink to delete (default: ${DEFAULT_SINK_NAME})
-  -f, --force                   Delete datasets without per-table confirmation
+  -f, --force                   Same as --yes (kept for compatibility)
   --impersonate-sa SA_EMAIL     Service account to impersonate (all gcloud and bq calls)
   -y, --yes, --headless         Non-interactive mode (skips confirmation prompts)
   -h, --help                    Display this help message and exit
@@ -182,11 +181,8 @@ delete_dataset() {
   local ds="$1" label="$2"
   log_info "Checking ${label} dataset ${DEST_PROJECT_ID}:${ds}..."
   if dataset_exists "${ds}"; then
-    if [[ "$FORCE" == "true" || "$HEADLESS" == "true" ]]; then
-      bq rm -r -f --project_id="${DEST_PROJECT_ID}" "${ds}"
-    else
-      bq rm -r --project_id="${DEST_PROJECT_ID}" "${ds}"
-    fi
+    # Deletion was already confirmed (prompt or -y), so don't ask again per dataset.
+    bq rm -r -f --project_id="${DEST_PROJECT_ID}" "${ds}"
     log_success "Deleted ${label} dataset ${DEST_PROJECT_ID}:${ds}."
   else
     log_info "${label} dataset ${ds} does not exist."
@@ -208,7 +204,7 @@ while [[ $# -gt 0 ]]; do
     --dataset-id) DATASET_ID="$2"; shift 2 ;;
     --raw-dataset-id) RAW_DATASET_ID="$2"; shift 2 ;;
     -s|--sink-name) SINK_NAME="$2"; shift 2 ;;
-    -f|--force) FORCE=true; shift ;;
+    -f|--force) HEADLESS=true; shift ;;
     --impersonate-sa) DEPLOYER_SERVICE_ACCOUNT="$2"; shift 2 ;;
     -y|--yes|--headless) HEADLESS=true; shift ;;
     -h|--help) usage ;;
@@ -308,6 +304,6 @@ delete_dataset "${RAW_DATASET_ID}" "RAW"
 echo ""
 echo -e "${GREEN}${BOLD}=============================================================================="
 echo " Antigravity Direct Log Sink Teardown Complete! 🧹"
-echo "==============================================================================${NC}"
+echo -e "==============================================================================${NC}"
 echo -e "Sink removed from ${PROJECT_ID}; datasets removed from ${DEST_PROJECT_ID}."
 echo ""

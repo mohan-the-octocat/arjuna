@@ -632,7 +632,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 | `--raw-dataset-id ID` | | `ge_app_agy_raw` | RAW dataset to delete |
 | `--dataset-id ID` | | `ge_app_agy_telemetry` | Views dataset to delete |
 | `--sink-name NAME` | `-s` | `ge-app-agy-telemetry-sink` | Sink to delete |
-| `--force` | `-f` | off | Delete datasets without per-table prompts |
+| `--force` | `-f` | off | Same as `--yes` (kept for compatibility) |
 | `--impersonate-sa EMAIL` | | | Service account to impersonate |
 | `--yes` / `--headless` | `-y` | off | No confirmation |
 | `--help` | `-h` | | Show help |

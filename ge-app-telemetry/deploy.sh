@@ -553,7 +553,7 @@ fi
 echo ""
 echo -e "${GREEN}${BOLD}=============================================================================="
 echo " Antigravity Direct Log Sink Deployment Completed Successfully! 🚀"
-echo "==============================================================================${NC}"
+echo -e "==============================================================================${NC}"
 echo ""
 echo -e "  ${BOLD}Sink Name          :${NC} ${SINK_NAME} → ${DEST_PROJECT_ID}:${RAW_DATASET_ID}"
 echo -e "  ${BOLD}Writer Identity    :${NC} ${WRITER_IDENTITY}"
