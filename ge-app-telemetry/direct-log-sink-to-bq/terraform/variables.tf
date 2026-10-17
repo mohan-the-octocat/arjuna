@@ -17,6 +17,11 @@ variable "raw_dataset_id" {
   description = "RAW dataset: all log fields incl. prompts and responses. Owners only."
   type        = string
   default     = "ge_app_agy_raw"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_]+$", var.raw_dataset_id)) && length(var.raw_dataset_id) <= 1024
+    error_message = "raw_dataset_id may contain only letters, digits and underscores."
+  }
 }
 
 variable "dataset_id" {
@@ -25,8 +30,8 @@ variable "dataset_id" {
   default     = "ge_app_agy_telemetry"
 
   validation {
-    condition     = length(trimspace(var.dataset_id)) > 0
-    error_message = "dataset_id must not be empty."
+    condition     = can(regex("^[A-Za-z0-9_]+$", var.dataset_id)) && length(var.dataset_id) <= 1024
+    error_message = "dataset_id may contain only letters, digits and underscores."
   }
 }
 

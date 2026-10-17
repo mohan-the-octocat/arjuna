@@ -261,10 +261,10 @@ terraform apply
 Outputs: `raw_dataset_id`, `dataset_id`, `dataset_location`, `views`, `sink_name`, `sink_writer_identity`, `sink_destination`.
 
 How it differs from `deploy.sh`:
-- **Views** are created by running the same SQL files as BigQuery DDL jobs (this keeps the column descriptions). Editing a SQL file makes the next `terraform apply` re-create that view. If a view is deleted outside Terraform, recreate it with `terraform apply -replace='google_bigquery_job.view["<view_name>"]'` or run `views/deploy_views.sh`.
+- **Views** are created by running the same SQL files as BigQuery DDL jobs (this keeps the column descriptions). Editing a SQL file makes the next `terraform apply` re-create that view. If a view is deleted outside Terraform, or a view job failed and must be retried, run `terraform apply -replace='random_id.view_job["<view_name>"]'` (a new job id is needed because BigQuery job ids can't be reused), or run `views/deploy_views.sh`.
 - **RAW table schemas** are created from `schemas/raw/` but later schema changes are ignored, because the sink adds columns on its own. To add fields from a newer schema file, run `deploy.sh` once (it only adds fields) or `bq update`.
 - **Dataset access** is created as owners-only. Extra entries (sink writer, authorized views, `view_readers`) are separate `google_bigquery_dataset_access` resources; entries you add by hand are left alone.
-- **Destroy:** with `allow_destroy = false` (default), `terraform destroy` fails on the RAW tables, which protects the data. Set it to `true` and apply first if you really want to delete everything.
+- **Destroy:** with `allow_destroy = false` (default), `terraform destroy` stops at the RAW tables, so the stored logs survive. Other resources (sink, views, access entries) may already have been removed by then; `terraform apply` restores them. To delete everything, set `allow_destroy = true`, run `terraform apply`, then `terraform destroy`.
 - It does **not** delete the old `ge-app-agy-prompts-audit-sink`; see [Upgrading](#124-upgrading-from-an-earlier-version).
 
 Use **either** `deploy.sh` **or** Terraform for a given project, not both, so there's one owner of the configuration.
@@ -312,6 +312,7 @@ cd ge-app-telemetry/dashboards/local-web
 ./stop.sh
 ```
 - Run it as a **project owner**, or as someone with access to the views dataset.
+- By default it's reachable **only from the same machine** (`http://localhost:8085`). On a remote workstation, use an SSH tunnel from your laptop (`ssh -L 8085:localhost:8085 <workstation>`), or start it with `HOST=0.0.0.0 ./start.sh` to listen on all interfaces (no login: anyone who can reach the port sees the data).
 - **↻ Refresh** in the header re-queries BigQuery.
 - Fetched data is stored in `data/`, which is git-ignored because it contains user emails.
 
@@ -363,6 +364,9 @@ Both datasets start **owner-only**. To let others use the data **without** expos
 | **Reviewers who must see prompts** | Grant BigQuery Data Viewer on **`ge_app_agy_raw`**. Do this only deliberately: it exposes all prompts and responses |
 
 Never grant broad project-level BigQuery roles just to give access to the views. Grant at the dataset level instead.
+
+> [!WARNING]
+> Grant only **BigQuery Data Viewer** on `ge_app_agy_telemetry`, never **Data Editor** or **Data Owner**. Authorized views are trusted by name: anyone who can replace a view in that dataset could rewrite it to return prompt text from RAW.
 
 ---
 
@@ -610,7 +614,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 | `--location REGION` | `-l` | `us-central1` | BigQuery location for both datasets |
 | `--sink-name NAME` | `-s` | `ge-app-agy-telemetry-sink` | Log Router sink name |
 | `--retention-days DAYS` | `-r` | `90` | RAW retention (`0` = never) |
-| `--impersonate-sa EMAIL` | | | Service account to impersonate for `gcloud` calls |
+| `--impersonate-sa EMAIL` | | | Service account to impersonate for all `gcloud` and `bq` calls (needs `roles/iam.serviceAccountTokenCreator` on it) |
 | `--yes` / `--headless` | `-y` | off | No prompts |
 | `--help` | `-h` | | Show help |
 
@@ -624,6 +628,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 | `--dataset-id ID` | | `ge_app_agy_telemetry` | Views dataset to delete |
 | `--sink-name NAME` | `-s` | `ge-app-agy-telemetry-sink` | Sink to delete |
 | `--force` | `-f` | off | Delete datasets without per-table prompts |
+| `--impersonate-sa EMAIL` | | | Service account to impersonate |
 | `--yes` / `--headless` | `-y` | off | No confirmation |
 | `--help` | `-h` | | Show help |
 
@@ -649,7 +654,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 
 | Flag | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--config FILE` | `-c` | `config.yaml` if present | YAML config file |
+| `--config FILE` | `-c` | `./config.yaml`, else `direct-log-sink-to-bq/config.yaml` | YAML config file; uses `destination_project_id` if set, else `project_id` |
 | `--project-id ID` | `-p` | active `gcloud` project | Project hosting the datasets |
 | `--dataset-id ID` | `-d` | `ge_app_agy_telemetry` | Views dataset. **Note:** `-d` here is the dataset, not the destination project as in `deploy.sh` |
 | `--raw-dataset-id ID` | | `ge_app_agy_raw` | RAW dataset the views read |
@@ -661,7 +666,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 | Command | Description |
 | :--- | :--- |
 | `./fetch_data.sh <PROJECT_ID> [VIEWS_DATASET]` | Queries the 6 views into `data/telemetry.json` |
-| `./start.sh [PORT]` | Starts the dashboard in the background (default 8085); fetches data first if none exists |
+| `./start.sh [PORT]` | Starts the dashboard in the background (default 8085); fetches data first if none exists. Local machine only by default; `HOST=0.0.0.0 ./start.sh` allows network access |
 | `./stop.sh` | Stops it |
 
 ### `tools/view-validation/run.sh`
@@ -695,7 +700,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 - **Limited history.** The sink only exports new log entries. `backfill.sh` can only recover what Cloud Logging still holds (30 days in the `_Default` bucket by default).
 - **Prompts are stored** in RAW for the retention period, and there's no "don't store prompts" mode in this version.
 - **Project-level IAM** (Editor, BigQuery Admin / Data Owner / Data Viewer) can read both datasets.
-- **The local dashboard has no authentication.** Use Looker Studio with owner's credentials for shared reporting.
+- **The local dashboard has no authentication.** It listens on localhost only by default; with `HOST=0.0.0.0`, anyone who can reach its port can see the data. Use Looker Studio with owner's credentials for shared reporting.
 - **No cost / billing figures**: the logs contain token counts only.
 
 ---

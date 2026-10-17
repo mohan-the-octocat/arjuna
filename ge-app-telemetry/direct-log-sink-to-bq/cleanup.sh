@@ -41,6 +41,7 @@ SINK_NAME=""
 CONFIG_FILE=""
 HEADLESS=false
 FORCE=false
+DEPLOYER_SERVICE_ACCOUNT=""
 
 # ------------------------------------------------------------------------------
 # Helper Functions
@@ -82,6 +83,7 @@ Options:
   --dataset-id ID               Views dataset to delete (default: ${DEFAULT_DATASET_ID})
   -s, --sink-name NAME          Cloud Logging sink to delete (default: ${DEFAULT_SINK_NAME})
   -f, --force                   Delete datasets without per-table confirmation
+  --impersonate-sa SA_EMAIL     Service account to impersonate (all gcloud and bq calls)
   -y, --yes, --headless         Non-interactive mode (skips confirmation prompts)
   -h, --help                    Display this help message and exit
 
@@ -136,6 +138,7 @@ PY
       dataset_id) [[ -z "$DATASET_ID" ]] && DATASET_ID="$val" ;;
       raw_dataset_id) [[ -z "$RAW_DATASET_ID" ]] && RAW_DATASET_ID="$val" ;;
       sink_name) [[ -z "$SINK_NAME" ]] && SINK_NAME="$val" ;;
+      deployer_service_account) [[ -z "$DEPLOYER_SERVICE_ACCOUNT" ]] && DEPLOYER_SERVICE_ACCOUNT="$val" ;;
     esac
   done <<< "$parsed"
   return 0
@@ -194,6 +197,10 @@ delete_dataset() {
 # Argument Parsing
 # ------------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
+  # Accept --flag=value as well as --flag value
+  if [[ "$1" == --*=* ]]; then
+    set -- "${1%%=*}" "${1#*=}" "${@:2}"
+  fi
   case "$1" in
     -c|--config) CONFIG_FILE="$2"; shift 2 ;;
     -p|--project-id) PROJECT_ID="$2"; shift 2 ;;
@@ -202,6 +209,7 @@ while [[ $# -gt 0 ]]; do
     --raw-dataset-id) RAW_DATASET_ID="$2"; shift 2 ;;
     -s|--sink-name) SINK_NAME="$2"; shift 2 ;;
     -f|--force) FORCE=true; shift ;;
+    --impersonate-sa) DEPLOYER_SERVICE_ACCOUNT="$2"; shift 2 ;;
     -y|--yes|--headless) HEADLESS=true; shift ;;
     -h|--help) usage ;;
     *) log_error "Unknown argument: $1"; usage ;;
@@ -217,7 +225,16 @@ elif [[ -f "$DEFAULT_CONFIG_FILE" ]]; then
   load_config_file "$DEFAULT_CONFIG_FILE"
 fi
 
+if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
+  log_info "Impersonating service account: ${DEPLOYER_SERVICE_ACCOUNT}"
+  export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="${DEPLOYER_SERVICE_ACCOUNT}"
+fi
+
 ACTIVE_GCLOUD_PROJECT=$(gcloud config get-value project 2>/dev/null || echo "")
+[[ "$ACTIVE_GCLOUD_PROJECT" == "(unset)" ]] && ACTIVE_GCLOUD_PROJECT=""
+# Destination follows the source project unless it was set explicitly.
+DEST_EXPLICIT=false
+[[ -n "$DEST_PROJECT_ID" ]] && DEST_EXPLICIT=true
 PROJECT_ID="${PROJECT_ID:-$ACTIVE_GCLOUD_PROJECT}"
 DEST_PROJECT_ID="${DEST_PROJECT_ID:-$PROJECT_ID}"
 DATASET_ID="${DATASET_ID:-$DEFAULT_DATASET_ID}"
@@ -234,6 +251,7 @@ if [[ "$HEADLESS" != "true" ]]; then
 
   read -r -p "Target GCP Project ID [${PROJECT_ID}]: " input_proj
   PROJECT_ID="${input_proj:-$PROJECT_ID}"
+  [[ "$DEST_EXPLICIT" == "false" ]] && DEST_PROJECT_ID="$PROJECT_ID"
 
   read -r -p "Destination GCP Project ID [${DEST_PROJECT_ID}]: " input_dest_proj
   DEST_PROJECT_ID="${input_dest_proj:-$DEST_PROJECT_ID}"
@@ -291,5 +309,5 @@ echo ""
 echo -e "${GREEN}${BOLD}=============================================================================="
 echo " Antigravity Direct Log Sink Teardown Complete! 🧹"
 echo "==============================================================================${NC}"
-echo -e "The sink and both datasets have been removed from ${PROJECT_ID}."
+echo -e "Sink removed from ${PROJECT_ID}; datasets removed from ${DEST_PROJECT_ID}."
 echo ""

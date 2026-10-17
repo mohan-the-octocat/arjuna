@@ -55,7 +55,8 @@ DEPLOYER_SERVICE_ACCOUNT=""
 
 # Scratch workspace with automatic cleanup
 SCRATCH_DIR=$(mktemp -d -t agy_backfill_XXXXXX 2>/dev/null || mktemp -d)
-trap 'rm -rf "$SCRATCH_DIR"' EXIT INT TERM
+trap 'rm -rf "$SCRATCH_DIR"' EXIT
+trap 'exit 130' INT TERM
 
 # ------------------------------------------------------------------------------
 # Helper Functions
@@ -209,9 +210,10 @@ LOOKBACK_DAYS="${LOOKBACK_DAYS:-$DEFAULT_LOOKBACK_DAYS}"
 SKIP_EXISTING="${SKIP_EXISTING:-$DEFAULT_SKIP_EXISTING}"
 STREAMS="${STREAMS:-$DEFAULT_STREAMS}"
 
+# Impersonation via env var: applies to every gcloud and bq call (bq has no flag for it).
 IMPERSONATE_FLAGS=()
 if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
-  IMPERSONATE_FLAGS=(--impersonate-service-account="${DEPLOYER_SERVICE_ACCOUNT}")
+  export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="${DEPLOYER_SERVICE_ACCOUNT}"
   log_info "Impersonating service account: ${DEPLOYER_SERVICE_ACCOUNT}"
 fi
 
@@ -273,6 +275,13 @@ fi
 if [[ -z "$END_TIME" ]]; then
   END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 fi
+RFC3339_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+for t in "$START_TIME" "$END_TIME"; do
+  if ! [[ "$t" =~ $RFC3339_RE ]]; then
+    log_error "Invalid timestamp '${t}'. Use RFC3339, e.g. 2026-10-01T00:00:00Z."
+    exit 1
+  fi
+done
 
 ACTIVE_ACCOUNT=$(gcloud config get-value account 2>/dev/null || echo "Unknown")
 log_info "Active Account : ${ACTIVE_ACCOUNT}"
@@ -324,7 +333,17 @@ schema = json.load(open(schema_path))
 dropped = set()
 
 def norm(k):
-    return k.replace('@', '_').lower()
+    # Sink naming: characters invalid in BigQuery column names become '_'.
+    return re.sub(r'[^0-9A-Za-z_]', '_', k).lower()
+
+def empty(v):
+    if v is None or v == '' or v == [] or v == {}:
+        return True
+    if isinstance(v, dict):
+        return all(empty(x) for x in v.values())
+    if isinstance(v, list):
+        return all(empty(x) for x in v)
+    return False
 
 def ts(v):
     # BigQuery accepts at most microseconds; Cloud Logging returns nanoseconds.
@@ -363,9 +382,13 @@ def record(obj, fields, path):
             continue
         f = by_name.get(norm(k))
         if f is None:
-            dropped.add(f"{path}{k}")
+            if not empty(v):
+                dropped.add(f"{path}{k}")
             continue
-        out[f['name']] = conv(v, f, f"{path}{k}.")
+        c = conv(v, f, f"{path}{k}.")
+        if c in ([], {}):
+            continue  # the sink stores empty arrays/records as NULL
+        out[f['name']] = c
     return out
 
 payload_field = next((f for f in schema if f['name'].lower() == payload_col), None)
@@ -385,9 +408,12 @@ with open(out_path, 'w') as out:
                 continue
             f = top.get(norm(k))
             if f is None:
-                dropped.add(k)
+                if not empty(v):
+                    dropped.add(k)
                 continue
-            row[f['name']] = conv(v, f, f"{k}.")
+            c = conv(v, f, f"{k}.")
+            if c not in ([], {}):
+                row[f['name']] = c
         out.write(json.dumps(row) + '\n')
 
 print(' '.join(sorted(dropped)))

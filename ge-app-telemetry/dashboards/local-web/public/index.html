@@ -490,7 +490,7 @@ async function loadData() {
 }
 async function refresh() {
   const btn = document.getElementById('btn-refresh'); btn.disabled = true; btn.textContent = '↻ Refreshing…';
-  try { const res = await fetch('/api/refresh', { method: 'POST' }); const d = await res.json(); if (!res.ok) throw new Error(d.details || d.error || res.statusText); showError(''); setData(d); }
+  try { const res = await fetch('/api/refresh', { method: 'POST', headers: { 'X-Requested-With': 'dashboard' } }); const d = await res.json(); if (!res.ok) throw new Error(d.details || d.error || res.statusText); showError(''); setData(d); }
   catch (e) { showError('Refresh failed: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = '↻ Refresh'; }
 }

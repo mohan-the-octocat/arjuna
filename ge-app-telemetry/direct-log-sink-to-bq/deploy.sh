@@ -98,7 +98,7 @@ Options:
   -l, --location REGION         Dataset residency location (default: ${DEFAULT_LOCATION})
   -s, --sink-name NAME          Cloud Logging sink identifier (default: ${DEFAULT_SINK_NAME})
   -r, --retention-days DAYS     RAW daily partition expiration in days (default: ${DEFAULT_RETENTION_DAYS}, 0 = never)
-  --impersonate-sa SA_EMAIL     Deployer Service Account to impersonate (gcloud calls)
+  --impersonate-sa SA_EMAIL     Service account to impersonate (all gcloud and bq calls)
   -y, --yes, --headless         Run in non-interactive/headless mode without prompts
   -h, --help                    Display this help message and exit
 
@@ -165,9 +165,18 @@ PY
 # ensure_dataset DATASET DESCRIPTION PARTITION_DAYS
 ensure_dataset() {
   local ds="$1" desc="$2" days="$3"
-  if bq show --project_id="${DEST_PROJECT_ID}" "${ds}" &> /dev/null; then
+  local info
+  if info=$(bq show --format=json --project_id="${DEST_PROJECT_ID}" "${ds}" 2> /dev/null); then
+    local loc
+    loc=$(jq -r '.location' <<< "${info}")
+    if [[ "${loc,,}" != "${DATASET_LOCATION,,}" ]]; then
+      log_error "Dataset ${DEST_PROJECT_ID}:${ds} already exists in location '${loc}', not '${DATASET_LOCATION}'."
+      log_error "Both datasets must be in the same location. Re-run with -l ${loc}, or delete the dataset first."
+      exit 1
+    fi
     log_info "Dataset ${DEST_PROJECT_ID}:${ds} already exists."
-    if [[ "$days" -gt 0 ]]; then
+    if [[ -n "$days" ]]; then
+      # 0 clears the expiration (never expire)
       bq update --default_partition_expiration=$(( days * 86400 )) "${DEST_PROJECT_ID}:${ds}" > /dev/null
     fi
     return 0
@@ -225,9 +234,8 @@ PY
   else
     log_info "Table ${ref} already has the required schema."
   fi
-  if [[ "$days" -gt 0 ]]; then
-    bq update --time_partitioning_expiration=$(( days * 86400 )) "${ref}" > /dev/null
-  fi
+  # 0 clears the expiration (never expire)
+  bq update --time_partitioning_expiration=$(( days * 86400 )) "${ref}" > /dev/null
   rm -f "${cur}" "${merged}"
 }
 
@@ -281,6 +289,10 @@ views_dataset_has_tables() {
 # Argument Parsing
 # ------------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
+  # Accept --flag=value as well as --flag value
+  if [[ "$1" == --*=* ]]; then
+    set -- "${1%%=*}" "${1#*=}" "${@:2}"
+  fi
   case "$1" in
     -c|--config) CONFIG_FILE="$2"; shift 2 ;;
     -p|--project-id) PROJECT_ID="$2"; shift 2 ;;
@@ -331,8 +343,12 @@ fi
 
 # Resolve defaults and active gcloud context
 ACTIVE_GCLOUD_PROJECT=$(gcloud config get-value project 2>/dev/null || echo "")
+[[ "$ACTIVE_GCLOUD_PROJECT" == "(unset)" ]] && ACTIVE_GCLOUD_PROJECT=""
 ACTIVE_GCLOUD_ACCOUNT=$(gcloud config get-value account 2>/dev/null || echo "")
 
+# Destination follows the source project unless it was set explicitly.
+DEST_EXPLICIT=false
+[[ -n "$DEST_PROJECT_ID" ]] && DEST_EXPLICIT=true
 PROJECT_ID="${PROJECT_ID:-$ACTIVE_GCLOUD_PROJECT}"
 DEST_PROJECT_ID="${DEST_PROJECT_ID:-$PROJECT_ID}"
 DATASET_ID="${DATASET_ID:-$DEFAULT_DATASET_ID}"
@@ -354,7 +370,7 @@ if [[ "$HEADLESS" != "true" ]]; then
   read -r -p "Source GCP Project ID [${PROJECT_ID}]: " input_proj
   PROJECT_ID="${input_proj:-$PROJECT_ID}"
 
-  [[ -z "$DEST_PROJECT_ID" ]] && DEST_PROJECT_ID="$PROJECT_ID"
+  [[ "$DEST_EXPLICIT" == "false" ]] && DEST_PROJECT_ID="$PROJECT_ID"
   read -r -p "Destination GCP Project ID [${DEST_PROJECT_ID}]: " input_dest_proj
   DEST_PROJECT_ID="${input_dest_proj:-$DEST_PROJECT_ID}"
 
@@ -398,11 +414,12 @@ if (( PARTITION_EXPIRATION_DAYS > 0 && PARTITION_EXPIRATION_DAYS < 90 )); then
   log_warn "Retention ${PARTITION_EXPIRATION_DAYS}d < 90d: the 90-day window in v_ge_app_agy_user_summary will contain only ${PARTITION_EXPIRATION_DAYS} days of data."
 fi
 
-# Apply SA Impersonation flag if specified
+# Service account impersonation: the env var applies to every gcloud AND bq call
+# (bq has no impersonation flag of its own).
 GCLOUD_EXTRA_FLAGS=()
 if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
   log_info "Impersonating deployer service account: ${DEPLOYER_SERVICE_ACCOUNT}"
-  GCLOUD_EXTRA_FLAGS+=(--impersonate-service-account="${DEPLOYER_SERVICE_ACCOUNT}")
+  export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="${DEPLOYER_SERVICE_ACCOUNT}"
 fi
 
 RETENTION_LABEL="${PARTITION_EXPIRATION_DAYS} days"
@@ -447,16 +464,17 @@ fi
 if views_dataset_has_tables "${DATASET_ID}"; then
   log_error "Dataset ${DEST_PROJECT_ID}:${DATASET_ID} contains TABLES from the previous layout (they may include prompts)."
   log_error "In the new layout ${DATASET_ID} holds views only and raw data lives in ${RAW_DATASET_ID}."
-  log_error "Migrate first, e.g. per table:"
-  log_error "  bq cp ${DEST_PROJECT_ID}:${DATASET_ID}.<table> ${DEST_PROJECT_ID}:${RAW_DATASET_ID}_legacy.<table>   # keep history"
-  log_error "  bq rm -f -t ${DEST_PROJECT_ID}:${DATASET_ID}.<table>"
+  log_error "Migrate first, e.g.:"
+  log_error "  bq mk --dataset --location=${DATASET_LOCATION} ${DEST_PROJECT_ID}:ge_app_agy_legacy"
+  log_error "  bq cp ${DEST_PROJECT_ID}:${DATASET_ID}.<table> ${DEST_PROJECT_ID}:ge_app_agy_legacy.<table>   # per table; keeps history"
+  log_error "  bq rm -f -t ${DEST_PROJECT_ID}:${DATASET_ID}.<table>                                    # per table"
   log_error "or remove everything with ./cleanup.sh, then re-run deploy.sh."
   exit 1
 fi
 
 ensure_dataset "${RAW_DATASET_ID}" "Antigravity RAW logs (all fields incl. prompts and responses). Owners only." \
   "${PARTITION_EXPIRATION_DAYS}"
-ensure_dataset "${DATASET_ID}" "Antigravity telemetry views (authorized views over ${RAW_DATASET_ID}; no prompt text). Owners only." 0
+ensure_dataset "${DATASET_ID}" "Antigravity telemetry views (authorized views over ${RAW_DATASET_ID}; no prompt text). Owners only." ""
 
 # ------------------------------------------------------------------------------
 # Step 3: RAW tables (pre-created so views never reference missing fields)

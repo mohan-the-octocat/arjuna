@@ -28,7 +28,7 @@ NC='\033[0m' # No Color
 # ------------------------------------------------------------------------------
 # Default Values
 # ------------------------------------------------------------------------------
-DEFAULT_CONFIG_FILE="../direct-log-sink-to-bq/config.yaml"
+
 DEFAULT_DATASET_ID="ge_app_agy_telemetry"
 DEFAULT_RAW_DATASET_ID="ge_app_agy_raw"
 
@@ -40,6 +40,7 @@ DEPLOYER_SERVICE_ACCOUNT=""
 HEADLESS=false
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_CONFIG_FILE="${SCRIPT_DIR}/../direct-log-sink-to-bq/config.yaml"
 
 # ------------------------------------------------------------------------------
 # Helper Functions
@@ -74,7 +75,7 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  -c, --config FILE             Path to YAML config file
+  -c, --config FILE             YAML config file (default: ./config.yaml, else ../direct-log-sink-to-bq/config.yaml)
   -p, --project-id ID           Target GCP Project ID hosting BigQuery
   -d, --dataset-id ID           Views dataset ID (default: ${DEFAULT_DATASET_ID})
   --raw-dataset-id ID           RAW dataset the views read from (default: ${DEFAULT_RAW_DATASET_ID})
@@ -92,59 +93,45 @@ HELP_EOF
   exit 0
 }
 
-# Parse YAML config
+# Parse scalar keys from a YAML config file (same format as deploy.sh).
+# The BigQuery project is destination_project_id if set, else project_id.
 load_config_file() {
   local file="$1"
-  if [[ ! -f "$file" ]]; then
-    return
-  fi
+  [[ -f "$file" ]] || return 0
   log_info "Loading configuration from: ${file}"
 
-  local parsed_project
-  local parsed_dataset
-  local parsed_raw
-  parsed_project=$(python3 -c "
-import sys, re
-try:
-    with open('${file}', 'r') as f:
-        for line in f:
-            m = re.match(r'^(project_id|destination_project_id)\s*:\s*[\"'\']?([^\"'\'#\s]+)', line.strip())
-            if m:
-                print(m.group(2))
-                break
-except Exception:
-    pass
-" 2>/dev/null || true)
+  local parsed key val cfg_project="" cfg_dest=""
+  parsed=$(python3 - "$file" <<'PY'
+import re, sys
 
-  parsed_dataset=$(python3 -c "
-import sys, re
-try:
-    with open('${file}', 'r') as f:
-        for line in f:
-            m = re.match(r'^dataset_id\s*:\s*[\"'\']?([^\"'\'#\s]+)', line.strip())
-            if m:
-                print(m.group(1))
-                break
-except Exception:
-    pass
-" 2>/dev/null || true)
+def parse_val(v):
+    v = v.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        return v[1:-1]
+    return v
 
-  parsed_raw=$(python3 -c "
-import sys, re
-try:
-    with open('${file}', 'r') as f:
-        for line in f:
-            m = re.match(r'^raw_dataset_id\s*:\s*[\"'\']?([^\"'\'#\s]+)', line.strip())
-            if m:
-                print(m.group(1))
-                break
-except Exception:
-    pass
-" 2>/dev/null || true)
-
-  [[ -z "$PROJECT_ID" && -n "$parsed_project" ]] && PROJECT_ID="$parsed_project"
-  [[ -z "$DATASET_ID" && -n "$parsed_dataset" ]] && DATASET_ID="$parsed_dataset"
-  [[ -z "$RAW_DATASET_ID" && -n "$parsed_raw" ]] && RAW_DATASET_ID="$parsed_raw"
+with open(sys.argv[1]) as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        m = re.match(r'^([A-Za-z0-9_-]+)\s*:\s*(.*)$', line)
+        if m:
+            val = parse_val(m.group(2).split(' #', 1)[0])
+            if val and not val.startswith(('[', '{')):
+                print(f'{m.group(1)}={val}')
+PY
+)
+  while IFS='=' read -r key val; do
+    case "$key" in
+      project_id) cfg_project="$val" ;;
+      destination_project_id) cfg_dest="$val" ;;
+      dataset_id) [[ -z "$DATASET_ID" ]] && DATASET_ID="$val" ;;
+      raw_dataset_id) [[ -z "$RAW_DATASET_ID" ]] && RAW_DATASET_ID="$val" ;;
+      deployer_service_account) [[ -z "$DEPLOYER_SERVICE_ACCOUNT" ]] && DEPLOYER_SERVICE_ACCOUNT="$val" ;;
+    esac
+  done <<< "$parsed"
+  [[ -z "$PROJECT_ID" ]] && PROJECT_ID="${cfg_dest:-$cfg_project}"
   return 0
 }
 
@@ -207,31 +194,34 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Check configs
+# Config: --config FILE, else ./config.yaml, else direct-log-sink-to-bq/config.yaml
 if [[ -n "$CONFIG_FILE" ]]; then
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    log_error "Config file not found: ${CONFIG_FILE}"
+    exit 1
+  fi
   load_config_file "$CONFIG_FILE"
 elif [[ -f "config.yaml" ]]; then
   load_config_file "config.yaml"
 elif [[ -f "$DEFAULT_CONFIG_FILE" ]]; then
   load_config_file "$DEFAULT_CONFIG_FILE"
-elif [[ -f "../direct-log-sink-to-bq/config.example.yaml" ]]; then
-  load_config_file "../direct-log-sink-to-bq/config.example.yaml"
 fi
 
 DATASET_ID="${DATASET_ID:-$DEFAULT_DATASET_ID}"
 RAW_DATASET_ID="${RAW_DATASET_ID:-$DEFAULT_RAW_DATASET_ID}"
 
+# Impersonation via env var: applies to every gcloud and bq call (bq has no flag for it).
 IMPERSONATE_FLAG=""
 if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
-  IMPERSONATE_FLAG="--impersonate-service-account=${DEPLOYER_SERVICE_ACCOUNT}"
-  log_info "Configured Service Account impersonation: ${DEPLOYER_SERVICE_ACCOUNT}"
+  export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="${DEPLOYER_SERVICE_ACCOUNT}"
+  log_info "Impersonating service account: ${DEPLOYER_SERVICE_ACCOUNT}"
 fi
 
 print_header
 
 log_info "Executing pre-flight checks..."
 
-for bin in gcloud bq; do
+for bin in gcloud bq python3; do
   if ! command -v "$bin" &>/dev/null; then
     log_error "Missing required CLI tool: ${bin}."
     exit 1

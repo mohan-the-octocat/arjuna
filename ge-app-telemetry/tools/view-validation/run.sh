@@ -31,7 +31,14 @@ done
 [[ -z "$PROJECT" ]] && { echo "ERROR: -p <PROJECT_ID> is required" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "${WORK}"' EXIT
+cleanup() {
+  rm -rf "${WORK}"
+  # On failure (or Ctrl-C) remove the synthetic datasets too, unless --keep.
+  if [[ "$KEEP" != "true" && "${DONE:-false}" != "true" ]]; then
+    for ds in "$RAW" "$VIEWS"; do bq rm -r -f --project_id="$PROJECT" "$ds" >/dev/null 2>&1 || true; done
+  fi
+}
+trap cleanup EXIT
 
 echo "== 1. Generating synthetic data"
 python3 "${HERE}/generate.py" "${WORK}"
@@ -63,4 +70,5 @@ else
   bq rm -r -f --project_id="$PROJECT" "$VIEWS"
   bq rm -r -f --project_id="$PROJECT" "$RAW"
 fi
+DONE=true
 exit $rc

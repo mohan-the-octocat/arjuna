@@ -6,18 +6,19 @@ Enterprise extensions, telemetry pipelines, and integrations for **Google Antigr
 
 ## Modules and Architecture
 
-* **[`ge-app-telemetry/`](ge-app-telemetry/):** Telemetry, data pipeline, and observability for Antigravity with Gemini Enterprise (GE App).
-  * [`SPEC.md`](ge-app-telemetry/SPEC.md): Technical specification, telemetry taxonomy (`businessaicode.googleapis.com`), and data governance.
-  * [`direct-log-sink-to-bq/`](ge-app-telemetry/direct-log-sink-to-bq/): Cloud Logging Router sink pushing to BigQuery dataset `ge_app_agy_telemetry` via `deploy.sh` or `terraform/`.
+* **[`ge-app-telemetry/`](ge-app-telemetry/):** Telemetry, data pipeline, and observability for Antigravity with Gemini Enterprise (GE App). **Start with its [README](ge-app-telemetry/README.md).**
+  * [`direct-log-sink-to-bq/`](ge-app-telemetry/direct-log-sink-to-bq/): Cloud Logging sink into a locked RAW BigQuery dataset (`ge_app_agy_raw`), deployed with `deploy.sh` or `terraform/`.
+  * [`views/`](ge-app-telemetry/views/): Authorized views in `ge_app_agy_telemetry` that never return prompt text.
+  * [`dashboards/local-web/`](ge-app-telemetry/dashboards/local-web/): Local web dashboard over the views.
 * *(Upcoming)* **`geap-paygo-telemetry/`:** Telemetry pipeline for Antigravity used via standalone Agent Platform (GEAP / Vertex AI) consumption.
 
 ---
 
 ## Quickstart
 
-To deploy the direct log sink for Gemini Enterprise Antigravity:
+To deploy the Gemini Enterprise Antigravity telemetry pipeline:
 ```bash
 cd ge-app-telemetry/direct-log-sink-to-bq
 ./deploy.sh
 ```
-See the [direct-log-sink-to-bq README](ge-app-telemetry/direct-log-sink-to-bq/README.md) for configuration and deployment details.
+See the [ge-app-telemetry README](ge-app-telemetry/README.md) for the full guide.

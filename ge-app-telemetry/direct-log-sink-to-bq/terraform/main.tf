@@ -114,7 +114,7 @@ resource "google_bigquery_table" "raw" {
   time_partitioning {
     type          = "DAY"
     field         = "timestamp"
-    expiration_ms = local.partition_expiration_ms
+    expiration_ms = var.partition_expiration_days * 86400 * 1000 # 0 = never expire (also clears an existing value)
   }
 
   lifecycle {
