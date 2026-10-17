@@ -74,7 +74,7 @@ BigQuery views for Google Antigravity telemetry in Gemini Enterprise. Each view 
 
 ## Deployment
 
-`direct-log-sink-to-bq/deploy.sh` deploys and authorizes these views automatically. To redeploy them on their own:
+`../deploy.sh` deploys and authorizes these views automatically. To redeploy them on their own:
 
 ```bash
 ./deploy_views.sh -p <PROJECT_ID> -d ge_app_agy_telemetry --raw-dataset-id ge_app_agy_raw -y

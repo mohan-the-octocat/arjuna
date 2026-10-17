@@ -5,6 +5,9 @@ Turn Google Antigravity usage logs into **BigQuery datasets, ready-made views an
 
 > **All logs land in a locked raw dataset that only project owners can read. Dashboards and analysts use a separate views dataset that never returns prompt text.**
 
+> [!NOTE]
+> **Scope.** This module covers one pipeline: **Cloud Logging → Log Router sink → BigQuery**. Logs are stored in a locked RAW BigQuery dataset and exposed through authorized BigQuery views and a dashboard. Other destinations (for example Pub/Sub, Cloud SQL or Log Analytics) are **out of scope** for now; the folder layout will be reorganised if one is added.
+
 ---
 
 ## Contents
@@ -154,13 +157,12 @@ gcloud auth login
 gcloud config set project <PROJECT_ID>
 
 # 2. Deploy everything (interactive; press ENTER to accept defaults)
-cd direct-log-sink-to-bq
 ./deploy.sh
 
 # 3. Wait ~5 minutes for the new sink to start routing, then use Antigravity as usual
 
 # 4. Open the dashboard
-cd ../dashboards/local-web
+cd dashboards/local-web
 ./fetch_data.sh <PROJECT_ID>
 ./start.sh 8085        # prints the URL, e.g. http://<your-host>:8085
 ```
@@ -171,7 +173,7 @@ cd ../dashboards/local-web
 
 ### 6.1 Interactive mode (recommended the first time)
 ```bash
-cd ge-app-telemetry/direct-log-sink-to-bq
+cd ge-app-telemetry
 ./deploy.sh
 ```
 You're asked for each setting. Press **ENTER** to accept the value in brackets:
@@ -234,10 +236,10 @@ It's safe and idempotent. Existing datasets and tables are kept, missing schema 
 > A **newly created** sink takes a few minutes to start routing. In testing, logs written in the first ~3 minutes after creation were never exported, while everything after that arrived completely. **Wait ~5 minutes after the first deployment** before testing. After that, entries normally reach RAW within about a minute and appear in the views immediately. To recover the missed minutes, run `backfill.sh` (see [Backfill history](#125-backfill-history)).
 
 ### 6.7 Deploying with Terraform (alternative to `deploy.sh`)
-`direct-log-sink-to-bq/terraform/` creates the same layout: both datasets locked to project owners, the 3 RAW tables from `schemas/raw/`, the sink to RAW, the 6 views from `views/*.sql` and their authorization on RAW.
+`terraform/` creates the same layout: both datasets locked to project owners, the 3 RAW tables from `schemas/raw/`, the sink to RAW, the 6 views from `views/*.sql` and their authorization on RAW.
 
 ```bash
-cd ge-app-telemetry/direct-log-sink-to-bq/terraform
+cd ge-app-telemetry/terraform
 cp terraform.tfvars.example terraform.tfvars     # edit the values
 terraform init
 terraform plan
@@ -545,6 +547,9 @@ gcloud logging sinks update ge-app-agy-telemetry-sink --no-disabled --project=<P
 ```
 
 ### 12.4 Upgrading from an earlier version
+> [!NOTE]
+> The scripts used to live in `ge-app-telemetry/direct-log-sink-to-bq/`. They're now directly in `ge-app-telemetry/`. If you kept a `config.yaml`, `terraform.tfvars` or local Terraform state in the old folder, move them up one level (`terraform/` moves as a whole).
+
 Earlier versions wrote raw tables (including prompts) directly into `ge_app_agy_telemetry`, and could also create a prompt audit sink and dataset. `deploy.sh` **stops** if it finds tables in the views dataset. To upgrade:
 ```bash
 # Option A: start fresh (simplest; history is removed)
@@ -572,7 +577,7 @@ terraform init && terraform apply
 The sink only exports new entries. `backfill.sh` copies entries that are **still in Cloud Logging** into RAW, for example activity from before you deployed, or from the first minutes of a new sink.
 
 ```bash
-cd ge-app-telemetry/direct-log-sink-to-bq
+cd ge-app-telemetry
 ./backfill.sh -p <PROJECT_ID> -n 7 --dry-run     # preview counts for the last 7 days
 ./backfill.sh -p <PROJECT_ID> -n 7 -y            # load them
 ./backfill.sh -p <PROJECT_ID> --start-time=2026-10-01T00:00:00Z --end-time=2026-10-03T00:00:00Z -s inference_response -y
@@ -593,7 +598,7 @@ Things to know:
 
 ### 12.6 Uninstall
 ```bash
-cd ge-app-telemetry/direct-log-sink-to-bq
+cd ge-app-telemetry
 ./cleanup.sh                     # interactive; type "yes" to confirm
 ./cleanup.sh -p <PROJECT_ID> -y -f   # headless
 ```
@@ -603,7 +608,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 
 ## 13. Command reference
 
-### `direct-log-sink-to-bq/deploy.sh`
+### `deploy.sh`
 | Flag | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--config FILE` | `-c` | `config.yaml` if present | YAML/JSON config file |
@@ -618,7 +623,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 | `--yes` / `--headless` | `-y` | off | No prompts |
 | `--help` | `-h` | | Show help |
 
-### `direct-log-sink-to-bq/cleanup.sh`
+### `cleanup.sh`
 | Flag | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--config FILE` | `-c` | `config.yaml` if present | YAML/JSON config file |
@@ -632,7 +637,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 | `--yes` / `--headless` | `-y` | off | No confirmation |
 | `--help` | `-h` | | Show help |
 
-### `direct-log-sink-to-bq/backfill.sh`
+### `backfill.sh`
 | Flag | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--config FILE` | `-c` | `config.yaml` if present | YAML config file (`project_id`, `destination_project_id`, `raw_dataset_id`, `lookback_days`, `skip_existing`, `deployer_service_account`) |
@@ -654,7 +659,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 
 | Flag | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--config FILE` | `-c` | `./config.yaml`, else `direct-log-sink-to-bq/config.yaml` | YAML config file; uses `destination_project_id` if set, else `project_id` |
+| `--config FILE` | `-c` | `./config.yaml`, else `ge-app-telemetry/config.yaml` | YAML config file; uses `destination_project_id` if set, else `project_id` |
 | `--project-id ID` | `-p` | active `gcloud` project | Project hosting the datasets |
 | `--dataset-id ID` | `-d` | `ge_app_agy_telemetry` | Views dataset. **Note:** `-d` here is the dataset, not the destination project as in `deploy.sh` |
 | `--raw-dataset-id ID` | | `ge_app_agy_raw` | RAW dataset the views read |
@@ -734,14 +739,12 @@ They're distinct counts per row. Use `v_ge_app_agy_daily_sessions` (exact for an
 ```text
 ge-app-telemetry/
 ├── README.md                         # This guide
-├── schemas/raw/                      # RAW table schemas (pre-created by deploy.sh)
-├── direct-log-sink-to-bq/
-│   ├── deploy.sh                     # One-command deployment (datasets, lock-down, sink, views)
-│   ├── cleanup.sh                    # Teardown
-│   ├── config.example.yaml           # Config template
-│   ├── backfill.sh                   # Copy older Cloud Logging entries into RAW
-│   ├── terraform/                    # Terraform alternative to deploy.sh
-│   └── README.md                     # Short module overview
+├── deploy.sh                         # One-command deployment (datasets, lock-down, sink, views)
+├── cleanup.sh                        # Teardown
+├── backfill.sh                       # Copy older Cloud Logging entries into RAW
+├── config.example.yaml               # Config template (copy to config.yaml)
+├── terraform/                        # Terraform alternative to deploy.sh
+├── schemas/raw/                      # RAW table schemas (pre-created by deploy.sh / Terraform)
 ├── views/
 │   ├── 00_v_ge_app_agy_user_summary.sql
 │   ├── 01_v_ge_app_agy_adoption.sql

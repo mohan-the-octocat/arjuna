@@ -40,7 +40,7 @@ DEPLOYER_SERVICE_ACCOUNT=""
 HEADLESS=false
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_CONFIG_FILE="${SCRIPT_DIR}/../direct-log-sink-to-bq/config.yaml"
+DEFAULT_CONFIG_FILE="${SCRIPT_DIR}/../config.yaml"
 
 # ------------------------------------------------------------------------------
 # Helper Functions
@@ -75,7 +75,7 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  -c, --config FILE             YAML config file (default: ./config.yaml, else ../direct-log-sink-to-bq/config.yaml)
+  -c, --config FILE             YAML config file (default: ./config.yaml, else ../config.yaml)
   -p, --project-id ID           Target GCP Project ID hosting BigQuery
   -d, --dataset-id ID           Views dataset ID (default: ${DEFAULT_DATASET_ID})
   --raw-dataset-id ID           RAW dataset the views read from (default: ${DEFAULT_RAW_DATASET_ID})
@@ -194,7 +194,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Config: --config FILE, else ./config.yaml, else direct-log-sink-to-bq/config.yaml
+# Config: --config FILE, else ./config.yaml, else ge-app-telemetry/config.yaml
 if [[ -n "$CONFIG_FILE" ]]; then
   if [[ ! -f "$CONFIG_FILE" ]]; then
     log_error "Config file not found: ${CONFIG_FILE}"
@@ -254,7 +254,7 @@ for ds in "${DATASET_ID}" "${RAW_DATASET_ID}"; do
   if ! ds_out=$(bq show ${IMPERSONATE_FLAG} "${PROJECT_ID}:${ds}" 2>&1); then
     if grep -q "Not found" <<< "${ds_out}"; then
       log_error "BigQuery dataset ${PROJECT_ID}:${ds} does not exist."
-      log_error "Please deploy the datasets first using deploy.sh in direct-log-sink-to-bq/."
+      log_error "Please deploy the datasets first using ../deploy.sh."
     else
       log_error "Could not check dataset ${PROJECT_ID}:${ds}: ${ds_out}"
       log_error "Check your gcloud credentials ('gcloud auth login') and permissions."
