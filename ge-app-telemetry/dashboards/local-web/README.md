@@ -13,7 +13,18 @@ A lightweight, dependency-free web dashboard (Node.js + Chart.js) for Antigravit
 ./start.sh [PORT]                           # default port 8085; prints the URL
 ./stop.sh
 ```
-The **↻ Refresh** button in the header re-runs `fetch_data.sh` and reloads the data.
+The **↻ Refresh** button in the header re-runs `fetch_data.sh` for the same project and dataset as the current data, and reloads it.
+
+**Who can open it:** by default the server only accepts connections from the same machine (`127.0.0.1`). The server has no login, and the data includes user emails and usage.
+
+If you run it on a remote workstation and browse from a laptop, either:
+```bash
+# Option A (recommended): SSH tunnel from the laptop, then open http://localhost:8085
+ssh -L 8085:localhost:8085 <workstation>
+
+# Option B: listen on all interfaces; anyone who can reach the port can see the data
+HOST=0.0.0.0 ./start.sh 8085
+```
 
 ---
 

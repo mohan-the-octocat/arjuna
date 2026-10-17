@@ -17,7 +17,8 @@
     {"name": "client_name", "type": "STRING"},
     {"name": "client_version", "type": "STRING"},
     {"name": "trajectory_id", "type": "STRING"},
-    {"name": "request_id", "type": "STRING"}
+    {"name": "request_id", "type": "STRING"},
+    {"name": "model_provider", "type": "STRING"}
   ]},
   {"name": "jsonpayload_v1_inferencerequestlog", "type": "RECORD", "fields": [
     {"name": "_type", "type": "STRING"},

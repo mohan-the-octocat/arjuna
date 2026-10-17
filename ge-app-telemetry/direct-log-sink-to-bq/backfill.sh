@@ -2,16 +2,20 @@
 # ==============================================================================
 # Google Antigravity (Gemini Enterprise) - Historical Log Backfill Utility
 # ==============================================================================
-# Backfills historical Antigravity developer telemetry from Cloud Logging into
-# the dedicated BigQuery dataset (ge_app_agy_telemetry).
+# Copies Antigravity log entries that are still in Cloud Logging (for example,
+# logs written before the sink existed, or in the first minutes after it was
+# created) into the RAW dataset (default: ge_app_agy_raw).
 #
-# Key Features:
-# 1. Fully Parameterized: CLI flags, environment variables, or config.yaml.
-# 2. Strict Deduplication: Inspects target BigQuery tables for existing insertIds
-#    to prevent duplicate entries.
-# 3. Privacy & ZDR: Strips prompt text and code diffs by default.
-# 4. Dry Run Mode: Previews matching record counts without modifying BigQuery.
-# 5. Schema Mapping: Formats JSON payloads to match native BigQuery sink schemas.
+# - Loads into the same RAW tables the sink writes to, with the same fields, so
+#   the views in ge_app_agy_telemetry pick the rows up immediately.
+# - Each entry is mapped onto the live RAW table schema (sink naming rules:
+#   field names matched case-insensitively, '@type' -> '_type'). Fields the
+#   table does not have are dropped and reported.
+# - Skips entries whose insertId is already in RAW (on by default).
+# - --dry-run shows the counts without writing anything.
+#
+# Requires: gcloud, bq, jq, python3. Run deploy.sh first (it creates RAW and
+# its tables). RAW is owners-only, so run this as a project owner.
 # ==============================================================================
 
 set -euo pipefail
@@ -29,29 +33,30 @@ NC='\033[0m' # No Color
 # Default Values
 # ------------------------------------------------------------------------------
 DEFAULT_CONFIG_FILE="config.yaml"
-DEFAULT_DATASET_ID="ge_app_agy_telemetry"
+DEFAULT_RAW_DATASET_ID="ge_app_agy_raw"
 DEFAULT_LOOKBACK_DAYS="7"
 DEFAULT_SKIP_EXISTING="true"
-DEFAULT_EXCLUDE_PROMPTS="true"
 DEFAULT_STREAMS="all"
+ALL_STREAMS=(inference_response client_telemetry inference_request)
+TABLE_PREFIX="businessaicode_googleapis_com_"
 
 PROJECT_ID=""
-DATASET_ID=""
+DEST_PROJECT_ID=""
+RAW_DATASET_ID=""
 LOOKBACK_DAYS=""
 START_TIME=""
 END_TIME=""
 STREAMS=""
 SKIP_EXISTING=""
-EXCLUDE_PROMPTS=""
 DRY_RUN=false
 HEADLESS=false
 CONFIG_FILE=""
 DEPLOYER_SERVICE_ACCOUNT=""
 
-# Create secure scratch workspace with automated cleanup
-SCRATCH_DIR=$(mktemp -d -t agy_backfill_XXXXXX 2>/dev/null || mktemp -d 2>/dev/null || echo "/tmp/agy_backfill_$$")
-mkdir -p "$SCRATCH_DIR"
-trap 'rm -rf "$SCRATCH_DIR"' EXIT INT TERM
+# Scratch workspace with automatic cleanup
+SCRATCH_DIR=$(mktemp -d -t agy_backfill_XXXXXX 2>/dev/null || mktemp -d)
+trap 'rm -rf "$SCRATCH_DIR"' EXIT
+trap 'exit 130' INT TERM
 
 # ------------------------------------------------------------------------------
 # Helper Functions
@@ -85,80 +90,81 @@ usage() {
   cat <<HELP_EOF
 Usage: $(basename "$0") [OPTIONS]
 
+Copies Antigravity log entries from Cloud Logging into the RAW dataset.
+
 Options:
-  -c, --config FILE             Path to YAML or JSON config file (default: config.yaml if present)
-  -p, --project-id ID           GCP Project ID hosting Cloud Logging and BigQuery
-  -d, --dataset-id ID           Dedicated BigQuery dataset ID (default: ${DEFAULT_DATASET_ID})
-  -n, --days DAYS               Number of lookback days (default: ${DEFAULT_LOOKBACK_DAYS}, max: 30)
-  --start-time RFC3339          Custom start timestamp override (e.g., 2026-08-26T00:00:00Z)
-  --end-time RFC3339            Custom end timestamp override (default: current UTC time)
-  -s, --streams STREAM          Target streams: 'all', 'inference_response', 'client_telemetry', 'inference_request'
-  --skip-existing BOOL          Query BigQuery first to drop duplicate insertIds (true/false, default: ${DEFAULT_SKIP_EXISTING})
-  --exclude-prompts BOOL        Redact/exclude prompt contents for ZDR privacy (true/false, default: ${DEFAULT_EXCLUDE_PROMPTS})
-  --dry-run                     Scan logs and preview record counts without writing to BigQuery
-  --impersonate-sa SA_EMAIL     Deployer Service Account to impersonate
-  -y, --yes, --headless         Run in non-interactive/headless mode without prompts
-  -h, --help                    Display this help message and exit
+  -c, --config FILE             YAML config file (default: config.yaml if present)
+  -p, --project-id ID           Source project (Cloud Logging, where Antigravity is active)
+  -d, --dest-project-id ID      Project hosting BigQuery (default: same as project-id)
+  --raw-dataset-id ID           RAW dataset to load into (default: ${DEFAULT_RAW_DATASET_ID})
+  -n, --days DAYS               Look back DAYS from now (default: ${DEFAULT_LOOKBACK_DAYS})
+  --start-time RFC3339          Window start, e.g. 2026-08-26T00:00:00Z (overrides --days)
+  --end-time RFC3339            Window end (default: now, UTC)
+  -s, --streams LIST            'all' or a comma list of: inference_response, client_telemetry, inference_request
+  --skip-existing BOOL          Skip entries whose insertId is already in RAW (true/false, default: ${DEFAULT_SKIP_EXISTING})
+  --dry-run                     Show counts only; write nothing
+  --impersonate-sa SA_EMAIL     Service account to impersonate (gcloud and bq calls)
+  -y, --yes, --headless         Do not ask for confirmation
+  -h, --help                    Show this help and exit
+
+Notes:
+  - Cloud Logging keeps entries in the _Default bucket for 30 days unless you changed it,
+    so older entries cannot be backfilled.
+  - Rows older than the RAW retention (partition expiration) are dropped by BigQuery.
 
 Examples:
-  # 1. Preview backfill for past 7 days (dry run):
-  ./backfill.sh --dry-run
+  # Preview the last 7 days:
+  ./backfill.sh -p my-ge-project --dry-run
 
-  # 2. Backfill past 7 days with duplicate skipping:
+  # Backfill the last 7 days:
   ./backfill.sh -p my-ge-project -n 7 -y
 
-  # 3. Backfill specific 2-day window for inference_response only:
-  ./backfill.sh --start-time="2026-08-28T00:00:00Z" --end-time="2026-08-30T00:00:00Z" -s inference_response -y
+  # Backfill a fixed window for inference_response only:
+  ./backfill.sh -p my-ge-project --start-time=2026-08-28T00:00:00Z --end-time=2026-08-30T00:00:00Z -s inference_response -y
 HELP_EOF
   exit 0
 }
 
-# Parse YAML config using python3
+# Parse scalar keys from a YAML config file.
 load_config_file() {
   local file="$1"
-  if [[ ! -f "$file" ]]; then
-    return
-  fi
+  [[ -f "$file" ]] || return 0
   log_info "Loading configuration from: ${file}"
 
-  python3 -c "
-import sys, re
+  local parsed
+  parsed=$(python3 - "$file" <<'PY'
+import re, sys
 
 def parse_val(v):
     v = v.strip()
-    if v.startswith('\"') and v.endswith('\"'): return v[1:-1]
-    if v.startswith(\"'\") and v.endswith(\"'\"): return v[1:-1]
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        return v[1:-1]
     return v
 
-try:
-    with open('${file}', 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            m = re.match(r'^([a-zA-Z0-9_-]+)\s*:\s*(.*)$', line)
-            if m:
-                key = m.group(1)
-                val = parse_val(m.group(2).split('#')[0])
-                if val:
-                    print(f'{key}={val}')
-except Exception as e:
-    sys.exit(1)
-" > "${SCRATCH_DIR}/config.env" || true
+with open(sys.argv[1]) as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        m = re.match(r'^([A-Za-z0-9_-]+)\s*:\s*(.*)$', line)
+        if m:
+            val = parse_val(m.group(2).split(' #', 1)[0])
+            if val and not val.startswith(('[', '{')):
+                print(f'{m.group(1)}={val}')
+PY
+)
 
-  if [[ -f "${SCRATCH_DIR}/config.env" ]]; then
-    while IFS='=' read -r key val; do
-      case "$key" in
-        project_id) [[ -z "$PROJECT_ID" ]] && PROJECT_ID="$val" ;;
-        destination_project_id) [[ -z "$PROJECT_ID" ]] && PROJECT_ID="$val" ;;
-        dataset_id) [[ -z "$DATASET_ID" ]] && DATASET_ID="$val" ;;
-        lookback_days) [[ -z "$LOOKBACK_DAYS" ]] && LOOKBACK_DAYS="$val" ;;
-        skip_existing) [[ -z "$SKIP_EXISTING" ]] && SKIP_EXISTING="$val" ;;
-        exclude_prompt_contents) [[ -z "$EXCLUDE_PROMPTS" ]] && EXCLUDE_PROMPTS="$val" ;;
-        deployer_service_account) [[ -z "$DEPLOYER_SERVICE_ACCOUNT" ]] && DEPLOYER_SERVICE_ACCOUNT="$val" ;;
-      esac
-    done < "${SCRATCH_DIR}/config.env"
-  fi
+  while IFS='=' read -r key val; do
+    case "$key" in
+      project_id) [[ -z "$PROJECT_ID" ]] && PROJECT_ID="$val" ;;
+      destination_project_id) [[ -z "$DEST_PROJECT_ID" ]] && DEST_PROJECT_ID="$val" ;;
+      raw_dataset_id) [[ -z "$RAW_DATASET_ID" ]] && RAW_DATASET_ID="$val" ;;
+      lookback_days) [[ -z "$LOOKBACK_DAYS" ]] && LOOKBACK_DAYS="$val" ;;
+      skip_existing) [[ -z "$SKIP_EXISTING" ]] && SKIP_EXISTING="$val" ;;
+      deployer_service_account) [[ -z "$DEPLOYER_SERVICE_ACCOUNT" ]] && DEPLOYER_SERVICE_ACCOUNT="$val" ;;
+    esac
+  done <<< "$parsed"
+  return 0
 }
 
 # ------------------------------------------------------------------------------
@@ -166,201 +172,149 @@ except Exception as e:
 # ------------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -c|--config)
-      CONFIG_FILE="$2"
-      shift 2
-      ;;
-    --config=*)
-      CONFIG_FILE="${1#*=}"
-      shift
-      ;;
-    -p|--project-id|--project)
-      PROJECT_ID="$2"
-      shift 2
-      ;;
-    --project-id=*|--project=*)
-      PROJECT_ID="${1#*=}"
-      shift
-      ;;
-    -d|--dataset-id|--dataset)
-      DATASET_ID="$2"
-      shift 2
-      ;;
-    --dataset-id=*|--dataset=*)
-      DATASET_ID="${1#*=}"
-      shift
-      ;;
-    -n|--days|--lookback-days)
-      LOOKBACK_DAYS="$2"
-      shift 2
-      ;;
-    --days=*|--lookback-days=*)
-      LOOKBACK_DAYS="${1#*=}"
-      shift
-      ;;
-    --start-time)
-      START_TIME="$2"
-      shift 2
-      ;;
-    --start-time=*)
-      START_TIME="${1#*=}"
-      shift
-      ;;
-    --end-time)
-      END_TIME="$2"
-      shift 2
-      ;;
-    --end-time=*)
-      END_TIME="${1#*=}"
-      shift
-      ;;
-    -s|--streams|--stream)
-      STREAMS="$2"
-      shift 2
-      ;;
-    --streams=*|--stream=*)
-      STREAMS="${1#*=}"
-      shift
-      ;;
-    --skip-existing)
-      SKIP_EXISTING="$2"
-      shift 2
-      ;;
-    --skip-existing=*)
-      SKIP_EXISTING="${1#*=}"
-      shift
-      ;;
-    --exclude-prompts)
-      EXCLUDE_PROMPTS="$2"
-      shift 2
-      ;;
-    --exclude-prompts=*)
-      EXCLUDE_PROMPTS="${1#*=}"
-      shift
-      ;;
-    --dry-run)
-      DRY_RUN=true
-      shift
-      ;;
-    --impersonate-sa)
-      DEPLOYER_SERVICE_ACCOUNT="$2"
-      shift 2
-      ;;
-    --impersonate-sa=*)
-      DEPLOYER_SERVICE_ACCOUNT="${1#*=}"
-      shift
-      ;;
-    -y|--yes|--headless)
-      HEADLESS=true
-      shift
-      ;;
-    -h|--help)
-      usage
-      ;;
-    *)
-      log_error "Unknown option: $1"
-      usage
-      ;;
+    -c|--config) CONFIG_FILE="$2"; shift 2 ;;
+    --config=*) CONFIG_FILE="${1#*=}"; shift ;;
+    -p|--project-id) PROJECT_ID="$2"; shift 2 ;;
+    --project-id=*) PROJECT_ID="${1#*=}"; shift ;;
+    -d|--dest-project-id) DEST_PROJECT_ID="$2"; shift 2 ;;
+    --dest-project-id=*) DEST_PROJECT_ID="${1#*=}"; shift ;;
+    --raw-dataset-id) RAW_DATASET_ID="$2"; shift 2 ;;
+    --raw-dataset-id=*) RAW_DATASET_ID="${1#*=}"; shift ;;
+    -n|--days) LOOKBACK_DAYS="$2"; shift 2 ;;
+    --days=*) LOOKBACK_DAYS="${1#*=}"; shift ;;
+    --start-time) START_TIME="$2"; shift 2 ;;
+    --start-time=*) START_TIME="${1#*=}"; shift ;;
+    --end-time) END_TIME="$2"; shift 2 ;;
+    --end-time=*) END_TIME="${1#*=}"; shift ;;
+    -s|--streams) STREAMS="$2"; shift 2 ;;
+    --streams=*) STREAMS="${1#*=}"; shift ;;
+    --skip-existing) SKIP_EXISTING="$2"; shift 2 ;;
+    --skip-existing=*) SKIP_EXISTING="${1#*=}"; shift ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --impersonate-sa) DEPLOYER_SERVICE_ACCOUNT="$2"; shift 2 ;;
+    --impersonate-sa=*) DEPLOYER_SERVICE_ACCOUNT="${1#*=}"; shift ;;
+    -y|--yes|--headless) HEADLESS=true; shift ;;
+    -h|--help) usage ;;
+    *) log_error "Unknown argument: $1"; usage ;;
   esac
 done
 
-# ------------------------------------------------------------------------------
-# Load Configuration File if present
-# ------------------------------------------------------------------------------
 if [[ -n "$CONFIG_FILE" ]]; then
   load_config_file "$CONFIG_FILE"
 elif [[ -f "$DEFAULT_CONFIG_FILE" ]]; then
   load_config_file "$DEFAULT_CONFIG_FILE"
-elif [[ -f "config.example.yaml" ]]; then
-  load_config_file "config.example.yaml"
 fi
 
-# Apply fallbacks
-DATASET_ID="${DATASET_ID:-$DEFAULT_DATASET_ID}"
+RAW_DATASET_ID="${RAW_DATASET_ID:-$DEFAULT_RAW_DATASET_ID}"
 LOOKBACK_DAYS="${LOOKBACK_DAYS:-$DEFAULT_LOOKBACK_DAYS}"
 SKIP_EXISTING="${SKIP_EXISTING:-$DEFAULT_SKIP_EXISTING}"
-EXCLUDE_PROMPTS="${EXCLUDE_PROMPTS:-$DEFAULT_EXCLUDE_PROMPTS}"
 STREAMS="${STREAMS:-$DEFAULT_STREAMS}"
 
-# Configure SA impersonation flags if specified
-IMPERSONATE_FLAG=""
+# Impersonation via env var: applies to every gcloud and bq call (bq has no flag for it).
+IMPERSONATE_FLAGS=()
 if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
-  IMPERSONATE_FLAG="--impersonate-service-account=${DEPLOYER_SERVICE_ACCOUNT}"
-  log_info "Configured Service Account impersonation: ${DEPLOYER_SERVICE_ACCOUNT}"
+  export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="${DEPLOYER_SERVICE_ACCOUNT}"
+  log_info "Impersonating service account: ${DEPLOYER_SERVICE_ACCOUNT}"
 fi
 
 # ------------------------------------------------------------------------------
-# Pre-Flight Dependency & Context Checks
+# Pre-Flight Checks
 # ------------------------------------------------------------------------------
 print_header
-
 log_info "Executing pre-flight checks..."
 
-for bin in gcloud bq jq; do
+for bin in gcloud bq jq python3; do
   if ! command -v "$bin" &>/dev/null; then
-    log_error "Missing required CLI tool: ${bin}. Please install it before running."
+    log_error "'${bin}' is required but not installed or not in PATH."
     exit 1
   fi
 done
 
-# Project Detection
 if [[ -z "$PROJECT_ID" ]]; then
   PROJECT_ID=$(gcloud config get-value project 2>/dev/null || true)
-  if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
-    if [[ "$HEADLESS" == true ]]; then
-      log_error "No project specified and no default project configured in gcloud."
-      exit 1
-    fi
-    echo -ne "${BOLD}Enter GCP Project ID: ${NC}"
+  [[ "$PROJECT_ID" == "(unset)" ]] && PROJECT_ID=""
+  if [[ -z "$PROJECT_ID" && "$HEADLESS" != true ]]; then
+    echo -ne "${BOLD}Enter source GCP Project ID: ${NC}"
     read -r PROJECT_ID
   fi
 fi
-
 if [[ -z "$PROJECT_ID" ]]; then
-  log_error "Project ID is required."
+  log_error "Project ID is required. Use --project-id or 'gcloud config set project <id>'."
+  exit 1
+fi
+DEST_PROJECT_ID="${DEST_PROJECT_ID:-$PROJECT_ID}"
+
+if [[ "$SKIP_EXISTING" != "true" && "$SKIP_EXISTING" != "false" ]]; then
+  log_error "--skip-existing must be true or false (got '${SKIP_EXISTING}')."
+  exit 1
+fi
+if [[ -z "$START_TIME" ]] && ! [[ "$LOOKBACK_DAYS" =~ ^[1-9][0-9]*$ ]]; then
+  log_error "--days must be a positive integer (got '${LOOKBACK_DAYS}')."
   exit 1
 fi
 
-ACTIVE_ACCOUNT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -n 1 || echo "Unknown")
-log_info "Active Account : ${ACTIVE_ACCOUNT}"
-log_info "Target Project : ${PROJECT_ID}"
-
-# Calculate timestamps
-if [[ -z "$START_TIME" ]]; then
-  START_TIME=$(date -u -d "${LOOKBACK_DAYS} days ago" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v-${LOOKBACK_DAYS}d +"%Y-%m-%dT%H:%M:%SZ")
+STREAM_LIST=()
+if [[ "$STREAMS" == "all" ]]; then
+  STREAM_LIST=("${ALL_STREAMS[@]}")
+else
+  IFS=',' read -ra REQUESTED <<< "$STREAMS"
+  for s in "${REQUESTED[@]}"; do
+    s="${s// /}"
+    if [[ ! " ${ALL_STREAMS[*]} " =~ " ${s} " ]]; then
+      log_error "Unknown stream '${s}'. Use 'all' or: ${ALL_STREAMS[*]}"
+      exit 1
+    fi
+    STREAM_LIST+=("$s")
+  done
 fi
 
+if [[ -z "$START_TIME" ]]; then
+  START_TIME=$(date -u -d "${LOOKBACK_DAYS} days ago" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
+    || date -u -v-"${LOOKBACK_DAYS}"d +"%Y-%m-%dT%H:%M:%SZ")
+fi
 if [[ -z "$END_TIME" ]]; then
   END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 fi
+RFC3339_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+for t in "$START_TIME" "$END_TIME"; do
+  if ! [[ "$t" =~ $RFC3339_RE ]]; then
+    log_error "Invalid timestamp '${t}'. Use RFC3339, e.g. 2026-10-01T00:00:00Z."
+    exit 1
+  fi
+done
 
-# Verify BigQuery Dataset exists
-log_info "Verifying BigQuery dataset ${PROJECT_ID}:${DATASET_ID} exists..."
-if ! bq show ${IMPERSONATE_FLAG} "${PROJECT_ID}:${DATASET_ID}" &>/dev/null; then
-  log_error "BigQuery dataset ${PROJECT_ID}:${DATASET_ID} does not exist."
-  log_error "Please run deploy.sh first to initialize the dataset and sink."
+ACTIVE_ACCOUNT=$(gcloud config get-value account 2>/dev/null || echo "Unknown")
+log_info "Active Account : ${ACTIVE_ACCOUNT}"
+
+# RAW dataset must exist (distinguish "not found" from auth/permission errors)
+if ! ds_out=$(bq show "${IMPERSONATE_FLAGS[@]+"${IMPERSONATE_FLAGS[@]}"}" "${DEST_PROJECT_ID}:${RAW_DATASET_ID}" 2>&1); then
+  if grep -q "Not found" <<< "${ds_out}"; then
+    log_error "RAW dataset ${DEST_PROJECT_ID}:${RAW_DATASET_ID} does not exist. Run deploy.sh first."
+  else
+    log_error "Could not read ${DEST_PROJECT_ID}:${RAW_DATASET_ID}: ${ds_out}"
+    log_error "RAW is owners-only: run as a project owner, and check 'gcloud auth login'."
+  fi
   exit 1
 fi
-log_success "BigQuery dataset verified: ${PROJECT_ID}:${DATASET_ID}"
+log_success "RAW dataset verified: ${DEST_PROJECT_ID}:${RAW_DATASET_ID}"
 
 # ------------------------------------------------------------------------------
-# Backfill Plan Summary
+# Plan
 # ------------------------------------------------------------------------------
 echo "------------------------------------------------------------------------------"
-echo -e "${BOLD}Backfill Execution Plan:${NC}"
-echo "  Target Project     : ${PROJECT_ID}"
-echo "  BigQuery Dataset   : ${DATASET_ID}"
-echo "  Start Timestamp    : ${START_TIME}"
-echo "  End Timestamp      : ${END_TIME}"
-echo "  Lookback Period    : ~${LOOKBACK_DAYS} days"
-echo "  Target Streams     : ${STREAMS}"
-echo "  Skip Existing IDs  : ${SKIP_EXISTING} (Deduplication enabled)"
-echo "  Privacy Exclusion  : ${EXCLUDE_PROMPTS} (Redact prompt bodies)"
-echo "  Execution Mode     : $([[ "$DRY_RUN" == true ]] && echo "DRY RUN (Preview Only)" || echo "LIVE BACKFILL")"
+echo -e "${BOLD}Backfill Plan:${NC}"
+echo "  Source (Cloud Logging) : ${PROJECT_ID}"
+echo "  Target (RAW dataset)   : ${DEST_PROJECT_ID}:${RAW_DATASET_ID}"
+echo "  Window                 : ${START_TIME} -> ${END_TIME}"
+echo "  Streams                : ${STREAM_LIST[*]}"
+echo "  Skip existing insertId : ${SKIP_EXISTING}"
+echo "  Mode                   : $([[ "$DRY_RUN" == true ]] && echo "DRY RUN (no writes)" || echo "LIVE")"
+echo "------------------------------------------------------------------------------"
+echo -e "${CYAN}ℹ Entries are loaded with all fields (including prompts and responses), exactly as the sink stores them.${NC}"
 echo "------------------------------------------------------------------------------"
 
 if [[ "$HEADLESS" != true && "$DRY_RUN" != true ]]; then
-  echo -ne "${YELLOW}${BOLD}Proceed with backfilling records into BigQuery? [y/N]: ${NC}"
+  echo -ne "${YELLOW}${BOLD}Proceed with the backfill? [y/N]: ${NC}"
   read -r CONFIRM
   if [[ ! "$CONFIRM" =~ ^[yY]([eE][sS])?$ ]]; then
     log_warn "Backfill cancelled by user."
@@ -368,194 +322,200 @@ if [[ "$HEADLESS" != true && "$DRY_RUN" != true ]]; then
   fi
 fi
 
-# Determine target stream list
-STREAM_LIST=()
-if [[ "$STREAMS" == "all" ]]; then
-  STREAM_LIST=("inference_response" "client_telemetry" "inference_request")
-else
-  IFS=',' read -ra ADDR <<< "$STREAMS"
-  for s in "${ADDR[@]}"; do
-    s=$(echo "$s" | tr -d ' ')
-    STREAM_LIST+=("$s")
-  done
-fi
+# Python mapper: Cloud Logging JSON array -> NDJSON matching the RAW table schema.
+MAPPER="${SCRATCH_DIR}/map_to_schema.py"
+cat > "${MAPPER}" <<'PY'
+import json, re, sys
+
+entries_path, schema_path, payload_col, out_path = sys.argv[1:5]
+entries = json.load(open(entries_path))
+schema = json.load(open(schema_path))
+dropped = set()
+
+def norm(k):
+    # Sink naming: characters invalid in BigQuery column names become '_'.
+    return re.sub(r'[^0-9A-Za-z_]', '_', k).lower()
+
+def empty(v):
+    if v is None or v == '' or v == [] or v == {}:
+        return True
+    if isinstance(v, dict):
+        return all(empty(x) for x in v.values())
+    if isinstance(v, list):
+        return all(empty(x) for x in v)
+    return False
+
+def ts(v):
+    # BigQuery accepts at most microseconds; Cloud Logging returns nanoseconds.
+    m = re.match(r'^(.*T\d\d:\d\d:\d\d)(\.\d+)?(Z|[+-]\d\d:\d\d)?$', str(v))
+    if not m:
+        return v
+    frac = (m.group(2) or '')[:7]
+    return f"{m.group(1)}{frac}{m.group(3) or 'Z'}"
+
+def scalar(v, typ):
+    if isinstance(v, (dict, list)):
+        return json.dumps(v)
+    if typ == 'STRING':
+        return v if isinstance(v, str) else json.dumps(v)
+    if typ == 'TIMESTAMP':
+        return ts(v)
+    return v
+
+def conv(v, field, path):
+    typ = field.get('type', 'STRING').upper()
+    if field.get('mode', '').upper() == 'REPEATED':
+        items = v if isinstance(v, list) else [v]
+        return [one(i, field, typ, path) for i in items if i is not None]
+    return one(v, field, typ, path)
+
+def one(v, field, typ, path):
+    if typ in ('RECORD', 'STRUCT'):
+        return record(v if isinstance(v, dict) else {}, field.get('fields', []), path)
+    return scalar(v, typ)
+
+def record(obj, fields, path):
+    by_name = {f['name'].lower(): f for f in fields}
+    out = {}
+    for k, v in obj.items():
+        if v is None:
+            continue
+        f = by_name.get(norm(k))
+        if f is None:
+            if not empty(v):
+                dropped.add(f"{path}{k}")
+            continue
+        c = conv(v, f, f"{path}{k}.")
+        if c in ([], {}):
+            continue  # the sink stores empty arrays/records as NULL
+        out[f['name']] = c
+    return out
+
+payload_field = next((f for f in schema if f['name'].lower() == payload_col), None)
+top = {f['name'].lower(): f for f in schema if f['name'].lower() != payload_col}
+
+with open(out_path, 'w') as out:
+    for e in entries:
+        row = {}
+        for k, v in e.items():
+            if v is None:
+                continue
+            if k == 'jsonPayload':
+                if payload_field is None:
+                    dropped.add('jsonPayload')
+                else:
+                    row[payload_field['name']] = record(v, payload_field.get('fields', []), 'jsonPayload.')
+                continue
+            f = top.get(norm(k))
+            if f is None:
+                if not empty(v):
+                    dropped.add(k)
+                continue
+            c = conv(v, f, f"{k}.")
+            if c not in ([], {}):
+                row[f['name']] = c
+        out.write(json.dumps(row) + '\n')
+
+print(' '.join(sorted(dropped)))
+PY
 
 # ------------------------------------------------------------------------------
-# Stream Processing Loop
+# Stream Processing
 # ------------------------------------------------------------------------------
 TOTAL_FETCHED=0
 TOTAL_SKIPPED=0
 TOTAL_INSERTED=0
 
 for stream in "${STREAM_LIST[@]}"; do
-  TABLE_ID="businessaicode_googleapis_com_${stream}"
+  TABLE_ID="${TABLE_PREFIX}${stream}"
+  TABLE_REF="${DEST_PROJECT_ID}:${RAW_DATASET_ID}.${TABLE_ID}"
+  PAYLOAD_COL="jsonpayload_v1_${stream//_/}log"
   log_info "=============================================================================="
-  log_info "Processing Stream: ${stream} -> Table: ${TABLE_ID}"
+  log_info "Stream ${stream} -> ${TABLE_REF}"
 
-  # Verify table exists in BigQuery
-  if ! bq show ${IMPERSONATE_FLAG} "${PROJECT_ID}:${DATASET_ID}.${TABLE_ID}" &>/dev/null; then
-    log_warn "Table ${TABLE_ID} does not yet exist in dataset ${DATASET_ID}."
-    log_warn "Skipping ${stream}. (Table will auto-create once real-time traffic arrives)."
-    continue
+  SCHEMA_JSON="${SCRATCH_DIR}/${stream}_schema.json"
+  if ! bq show "${IMPERSONATE_FLAGS[@]+"${IMPERSONATE_FLAGS[@]}"}" --schema --format=json "${TABLE_REF}" > "${SCHEMA_JSON}" 2>/dev/null; then
+    log_error "Table ${TABLE_REF} not found. Run deploy.sh (it pre-creates the RAW tables)."
+    exit 1
   fi
 
-  # 1. Fetch Cloud Logging entries
+  # 1. Read Cloud Logging
   LOG_FILTER="resource.type=\"businessaicode.googleapis.com/BAICInstance\" AND logName=\"projects/${PROJECT_ID}/logs/businessaicode.googleapis.com%2F${stream}\" AND timestamp>=\"${START_TIME}\" AND timestamp<=\"${END_TIME}\""
-  
-  STREAM_RAW_JSON="${SCRATCH_DIR}/${stream}_raw.json"
-  log_info "Scanning Cloud Logging for entries between ${START_TIME} and ${END_TIME}..."
-  
-  gcloud logging read "$LOG_FILTER" \
-    --project="${PROJECT_ID}" \
-    ${IMPERSONATE_FLAG} \
-    --format=json > "$STREAM_RAW_JSON" 2>/dev/null || echo "[]" > "$STREAM_RAW_JSON"
+  RAW_JSON="${SCRATCH_DIR}/${stream}_raw.json"
+  log_info "Reading Cloud Logging entries (${START_TIME} -> ${END_TIME})..."
+  if ! gcloud logging read "$LOG_FILTER" --project="${PROJECT_ID}" --format=json \
+      "${IMPERSONATE_FLAGS[@]+"${IMPERSONATE_FLAGS[@]}"}" > "$RAW_JSON"; then
+    log_error "gcloud logging read failed for ${stream}. Check permissions (roles/logging.viewer) and the filter."
+    exit 1
+  fi
+  [[ -s "$RAW_JSON" ]] || echo "[]" > "$RAW_JSON"
 
-  RECORD_COUNT=$(jq 'length' "$STREAM_RAW_JSON")
+  RECORD_COUNT=$(jq 'length' "$RAW_JSON")
   TOTAL_FETCHED=$((TOTAL_FETCHED + RECORD_COUNT))
-  log_info "Found ${RECORD_COUNT} entries in Cloud Logging for ${stream}."
+  log_info "Found ${RECORD_COUNT} entries."
+  [[ "$RECORD_COUNT" -eq 0 ]] && continue
 
-  if [[ "$RECORD_COUNT" -eq 0 ]]; then
-    log_info "No records to backfill for ${stream}."
-    continue
-  fi
-
-  # 2. Deduplication Check against BigQuery
-  STREAM_FILTERED_JSON="${SCRATCH_DIR}/${stream}_filtered.json"
-  SKIPPED_COUNT=0
-  NEW_COUNT=0
-
+  # 2. Skip entries already in RAW
+  NEW_JSON="${SCRATCH_DIR}/${stream}_new.json"
   if [[ "$SKIP_EXISTING" == "true" ]]; then
-    EXISTING_IDS_FILE="${SCRATCH_DIR}/${stream}_existing_ids.txt"
-    log_info "Checking target table for existing insertIds to prevent duplicates..."
-    
-    # Query BigQuery for existing insertIds in the target time window
-    bq query \
-      --use_legacy_sql=false \
-      ${IMPERSONATE_FLAG} \
-      --format=csv \
-      "SELECT insertId FROM \`${PROJECT_ID}.${DATASET_ID}.${TABLE_ID}\` WHERE timestamp >= '${START_TIME}' AND timestamp <= '${END_TIME}'" \
-      2>/dev/null | tail -n +2 | grep -v '^$' > "$EXISTING_IDS_FILE" || touch "$EXISTING_IDS_FILE"
-
-    EXISTING_COUNT=$(wc -l < "$EXISTING_IDS_FILE" | tr -d ' ')
-    log_info "Found ${EXISTING_COUNT} existing insertIds in BigQuery."
-
-    if [[ "$EXISTING_COUNT" -gt 0 ]]; then
-      # Filter out records whose insertId is already present in BigQuery
-      jq --slurpfile existing <(jq -R '.' "$EXISTING_IDS_FILE") '
-        ($existing | map({(.): true}) | add // {}) as $lookup |
-        map(select($lookup[.insertId] | not))
-      ' "$STREAM_RAW_JSON" > "$STREAM_FILTERED_JSON"
-      
-      NEW_COUNT=$(jq 'length' "$STREAM_FILTERED_JSON")
-      SKIPPED_COUNT=$((RECORD_COUNT - NEW_COUNT))
-      TOTAL_SKIPPED=$((TOTAL_SKIPPED + SKIPPED_COUNT))
-      log_info "Deduplication: ${SKIPPED_COUNT} duplicate records skipped, ${NEW_COUNT} new records to insert."
-    else
-      cp "$STREAM_RAW_JSON" "$STREAM_FILTERED_JSON"
-      NEW_COUNT="$RECORD_COUNT"
+    EXISTING_IDS="${SCRATCH_DIR}/${stream}_existing_ids.txt"
+    if ! bq query "${IMPERSONATE_FLAGS[@]+"${IMPERSONATE_FLAGS[@]}"}" --project_id="${DEST_PROJECT_ID}" \
+        --use_legacy_sql=false --format=csv --max_rows=100000000 \
+        "SELECT DISTINCT insertId FROM \`${DEST_PROJECT_ID}.${RAW_DATASET_ID}.${TABLE_ID}\` WHERE timestamp BETWEEN TIMESTAMP('${START_TIME}') AND TIMESTAMP('${END_TIME}')" \
+        > "${EXISTING_IDS}.csv"; then
+      log_error "Could not read existing insertIds from ${TABLE_REF}."
+      exit 1
     fi
+    tail -n +2 "${EXISTING_IDS}.csv" | grep -v '^$' > "$EXISTING_IDS" || true
+    jq --rawfile ids "$EXISTING_IDS" '
+      (reduce ($ids | split("\n")[] | select(length > 0)) as $i ({}; .[$i] = true)) as $seen
+      | map(select($seen[.insertId] | not))
+    ' "$RAW_JSON" > "$NEW_JSON"
   else
-    cp "$STREAM_RAW_JSON" "$STREAM_FILTERED_JSON"
-    NEW_COUNT="$RECORD_COUNT"
+    cp "$RAW_JSON" "$NEW_JSON"
   fi
+  NEW_COUNT=$(jq 'length' "$NEW_JSON")
+  SKIPPED=$((RECORD_COUNT - NEW_COUNT))
+  TOTAL_SKIPPED=$((TOTAL_SKIPPED + SKIPPED))
+  log_info "${SKIPPED} already in RAW, ${NEW_COUNT} new."
 
-  # 3. Dry Run Check
   if [[ "$DRY_RUN" == true ]]; then
-    log_info "[DRY RUN] Would insert ${NEW_COUNT} records into ${DATASET_ID}.${TABLE_ID}."
+    log_info "[DRY RUN] Would load ${NEW_COUNT} entries into ${TABLE_REF}."
     continue
   fi
+  [[ "$NEW_COUNT" -eq 0 ]] && continue
 
-  if [[ "$NEW_COUNT" -eq 0 ]]; then
-    log_info "All ${RECORD_COUNT} records are already present in BigQuery. Nothing to load."
-    continue
+  # 3. Map to the RAW table schema
+  NDJSON="${SCRATCH_DIR}/${stream}.ndjson"
+  DROPPED=$(python3 "${MAPPER}" "$NEW_JSON" "$SCHEMA_JSON" "$PAYLOAD_COL" "$NDJSON")
+  if [[ -n "$DROPPED" ]]; then
+    log_warn "Fields not in ${TABLE_ID} (dropped): ${DROPPED}"
   fi
 
-  # 4. Transform to BigQuery Target Schema NDJSON
-  STREAM_NDJSON="${SCRATCH_DIR}/${stream}_transformed.ndjson"
-  log_info "Transforming ${NEW_COUNT} records to BigQuery schema format..."
-
-  case "$stream" in
-    inference_response)
-      jq -c --arg exclude "$EXCLUDE_PROMPTS" '.[] | {
-        insertId: .insertId,
-        logName: .logName,
-        severity: .severity,
-        timestamp: .timestamp,
-        receiveTimestamp: .receiveTimestamp,
-        resource: .resource,
-        labels: .labels,
-        jsonpayload_v1_inferenceresponselog: {
-          _type: (.jsonPayload["@type"] // null),
-          experience: (.jsonPayload.experience // null),
-          metadata: {
-            totaltokencount: (.jsonPayload.metadata.totalTokenCount // null)
-          },
-          output: (if $exclude == "true" then null else (.jsonPayload.output // null) end)
-        }
-      }' "$STREAM_FILTERED_JSON" > "$STREAM_NDJSON"
-      ;;
-    client_telemetry)
-      jq -c '.[] | {
-        insertId: .insertId,
-        logName: .logName,
-        severity: .severity,
-        timestamp: .timestamp,
-        receiveTimestamp: .receiveTimestamp,
-        resource: .resource,
-        labels: .labels,
-        jsonpayload_v1_clienttelemetrylog: {
-          _type: (.jsonPayload["@type"] // null),
-          eventtype: (.jsonPayload.eventType // null)
-        }
-      }' "$STREAM_FILTERED_JSON" > "$STREAM_NDJSON"
-      ;;
-    inference_request)
-      jq -c --arg exclude "$EXCLUDE_PROMPTS" '.[] | {
-        insertId: .insertId,
-        logName: .logName,
-        severity: .severity,
-        timestamp: .timestamp,
-        receiveTimestamp: .receiveTimestamp,
-        resource: .resource,
-        labels: .labels,
-        jsonpayload_v1_inferencerequestlog: {
-          _type: (.jsonPayload["@type"] // null),
-          experience: (.jsonPayload.experience // null),
-          input: (if $exclude == "true" then null else (.jsonPayload.input // null) end)
-        }
-      }' "$STREAM_FILTERED_JSON" > "$STREAM_NDJSON"
-      ;;
-  esac
-
-  # 5. Load into BigQuery
-  log_info "Loading ${NEW_COUNT} records into ${PROJECT_ID}:${DATASET_ID}.${TABLE_ID}..."
-  
-  bq load \
-    ${IMPERSONATE_FLAG} \
+  # 4. Load
+  log_info "Loading ${NEW_COUNT} entries into ${TABLE_REF}..."
+  bq load "${IMPERSONATE_FLAGS[@]+"${IMPERSONATE_FLAGS[@]}"}" \
     --source_format=NEWLINE_DELIMITED_JSON \
-    --schema_update_option=ALLOW_FIELD_ADDITION \
-    "${PROJECT_ID}:${DATASET_ID}.${TABLE_ID}" \
-    "$STREAM_NDJSON"
-
+    "${TABLE_REF}" "$NDJSON" > /dev/null
   TOTAL_INSERTED=$((TOTAL_INSERTED + NEW_COUNT))
-  log_success "Loaded ${NEW_COUNT} records into ${TABLE_ID}."
+  log_success "Loaded ${NEW_COUNT} entries into ${TABLE_ID}."
 done
 
 # ------------------------------------------------------------------------------
-# Final Completion Report
+# Report
 # ------------------------------------------------------------------------------
 echo ""
 echo -e "${GREEN}${BOLD}==============================================================================${NC}"
 echo -e "${GREEN}${BOLD} Antigravity Historical Log Backfill Completed! 📊${NC}"
 echo -e "${GREEN}${BOLD}==============================================================================${NC}"
-echo "  Target Dataset     : ${PROJECT_ID}:${DATASET_ID}"
-echo "  Time Window        : ${START_TIME} -> ${END_TIME}"
-echo "  Total Scanned Logs : ${TOTAL_FETCHED}"
-echo "  Duplicates Skipped : ${TOTAL_SKIPPED}"
+echo "  Target            : ${DEST_PROJECT_ID}:${RAW_DATASET_ID}"
+echo "  Window            : ${START_TIME} -> ${END_TIME}"
+echo "  Entries scanned   : ${TOTAL_FETCHED}"
+echo "  Already in RAW    : ${TOTAL_SKIPPED}"
 if [[ "$DRY_RUN" == true ]]; then
-  echo "  Mode               : DRY RUN (No records inserted)"
+  echo "  Mode              : DRY RUN (nothing written)"
 else
-  echo "  Total Backfilled   : ${TOTAL_INSERTED}"
+  echo "  Entries loaded    : ${TOTAL_INSERTED}"
 fi
 echo "=============================================================================="
 echo ""

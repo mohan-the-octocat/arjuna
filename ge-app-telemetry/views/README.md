@@ -102,7 +102,7 @@ ORDER BY total_tokens DESC
 LIMIT 20;
 ```
 
-### Daily active users and sessions
+### Daily active users and inferences
 ```sql
 SELECT event_date, COUNT(DISTINCT user_email) AS daily_active_users, SUM(total_inferences) AS inferences
 FROM `<PROJECT_ID>.ge_app_agy_telemetry.v_ge_app_agy_adoption`
