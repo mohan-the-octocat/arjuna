@@ -37,6 +37,17 @@
           {"name": "author", "type": "STRING"},
           {"name": "content", "type": "STRING"}
         ]}
+      ]},
+      {"name": "attributioncontext", "type": "RECORD", "fields": [
+        {"name": "citationmetadata", "type": "RECORD", "fields": [
+          {"name": "_type", "type": "STRING"},
+          {"name": "citations", "type": "RECORD", "mode": "REPEATED", "fields": [
+            {"name": "url", "type": "STRING"},
+            {"name": "license", "type": "STRING"},
+            {"name": "startindex", "type": "FLOAT"},
+            {"name": "endindex", "type": "FLOAT"}
+          ]}
+        ]}
       ]}
     ]}
   ]}

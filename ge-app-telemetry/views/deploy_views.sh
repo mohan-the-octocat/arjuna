@@ -10,6 +10,7 @@
 # 3. v_ge_app_agy_token_economics
 # 4. v_ge_app_agy_model_summary
 # 5. v_ge_app_agy_daily_sessions
+# 6. v_ge_app_agy_code_citations
 # Each view is added to the RAW dataset's access list (type: view) so owners of
 # the views dataset can query it without direct access to RAW.
 # ==============================================================================
@@ -271,6 +272,7 @@ VIEW_FILES=(
   "03_v_ge_app_agy_token_economics.sql"
   "04_v_ge_app_agy_model_summary.sql"
   "05_v_ge_app_agy_daily_sessions.sql"
+  "06_v_ge_app_agy_code_citations.sql"
 )
 VIEW_NAMES=()
 

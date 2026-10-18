@@ -69,6 +69,16 @@ for w in ("7", "90"):
     act = {("__all__" if r["scope"] == "all_models" else r["model"]): {k: n(r[k]) for k in mkeys} for r in rows if r["window_days"] == w}
     check(f"model_summary {w}d: all models + all_models row", exp, act)
 
+# 7. code_citations: one row per citation (deduplicated), never response text
+rows = q(f"SELECT url, license, matched_chars, request_id, CAST(event_timestamp AS STRING) t FROM `{V}.v_ge_app_agy_code_citations`")
+by_url, by_lic = defaultdict(int), defaultdict(int)
+for r in rows: by_url[r["url"]] += 1; by_lic[r["license"]] += 1
+exp = GT["citations"]
+check("code_citations: count, per URL, per license, matched chars, responses",
+      {k: exp[k] for k in ("total", "by_url", "by_license", "matched_chars", "responses")},
+      {"total": len(rows), "by_url": dict(by_url), "by_license": dict(by_lic),
+       "matched_chars": sum(n(r["matched_chars"]) for r in rows), "responses": len({(r["t"], r["request_id"]) for r in rows})})
+
 w = max(len(x[0]) for x in results)
 for name, ok, detail in results:
     print(f"{'PASS' if ok else 'FAIL'}  {name.ljust(w)}  {detail[:300]}")

@@ -174,6 +174,10 @@
       <div class="card"><h3>Grant rate by user</h3><div class="hint">Accepted ÷ permission requests.</div><div class="chart-box"><canvas id="vq-user"></canvas></div></div>
       <div class="card"><h3>Grant rate by client</h3><div class="hint">Accepted ÷ permission requests.</div><div class="chart-box"><canvas id="vq-model"></canvas></div></div>
       <div class="card"><h3>Finished turns per day</h3><div class="hint">'InferenceResolved' events — a turn finished (activity signal, not a success signal).</div><div class="chart-box"><canvas id="vq-turns"></canvas></div></div>
+      <div class="card wide">
+        <h3>Code citations</h3><div class="hint">Model responses that closely matched public source code: the cited source and its license, never the matched text. Selected range &amp; filters (the model filter applies here). Latest 200 shown.</div>
+        <div class="table-wrap"><table id="vq-citations"></table></div>
+      </div>
     </div>
   </section>
 </div>
@@ -423,6 +427,7 @@ function renderTokens() {
 function renderQuality() {
   // Permission / client events carry no model label, so the model filter is not applied here.
   const tq = filtered(DATA.trust_quality, { ignoreModel: true }); const days = dateList(state.range);
+  const cz = filtered(DATA.code_citations);
   const req = sumBy(tq, 'permission_requests_total'), acc = sumBy(tq, 'permission_grants_accepted'), rej = sumBy(tq, 'permission_grants_rejected');
   kpiCards('vq-kpis', [
     { label: 'Permission requests', value: fmt(req), sub: `Last ${state.range} days` },
@@ -430,7 +435,9 @@ function renderQuality() {
     { label: 'Rejected', value: fmt(rej) },
     { label: 'Grant rate', value: pct(ratio(acc, req)) },
     { label: 'Finished turns', value: fmt(sumBy(tq, 'inference_resolved_events')), sub: 'InferenceResolved events' },
+    { label: 'Code citations', value: fmt(cz.length), sub: `${uniq(cz.map(c => c.url)).length} public source(s)` },
   ]);
+  renderCitations(cz);
   const A = groupSum(tq, x => x.event_date, 'permission_grants_accepted'), R = groupSum(tq, x => x.event_date, 'permission_grants_rejected');
   chart('vq-daily', { type: 'bar', data: { labels: dayLabels(), datasets: [
       { label: 'Accepted', data: days.map(d => A[d] || 0), backgroundColor: PALETTE[1] },
@@ -447,6 +454,15 @@ function renderQuality() {
   const T = groupSum(tq, x => x.event_date, 'inference_resolved_events');
   chart('vq-turns', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Finished turns', data: days.map(d => T[d] || 0), borderColor: PALETTE[5], backgroundColor: PALETTE[5], tension: .2 }] },
     options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }, tq.length === 0);
+}
+
+function renderCitations(rows) {
+  const t = document.getElementById('vq-citations');
+  const sorted = [...rows].sort((a, b) => String(b.event_timestamp).localeCompare(String(a.event_timestamp))).slice(0, 200);
+  const link = u => /^https?:\/\//.test(u || '') ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>` : esc(u ?? '—');
+  t.innerHTML = `<thead><tr><th>Time (UTC)</th><th>User</th><th>Client</th><th>Model</th><th>Source</th><th>License</th><th class="num">Matched chars</th></tr></thead>` +
+    `<tbody>${sorted.length ? sorted.map(r => `<tr><td>${esc(fmtTime(r.event_timestamp))}</td><td>${esc(r.user_email)}</td><td>${esc(r.client_name)}</td><td>${esc(r.model)}</td><td>${link(r.url)}</td><td>${esc(r.license)}</td><td class="num">${fmt(r.matched_chars)}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="empty">No code citations in the current selection.</td></tr>'}</tbody>`;
 }
 
 // ----------------------------------------------------------------------------

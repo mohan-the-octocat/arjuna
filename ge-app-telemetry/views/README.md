@@ -54,6 +54,12 @@ BigQuery views for Google Antigravity telemetry in Gemini Enterprise. Each view 
 * Gives **exact** daily sessions and users for any filter combination: pick the row whose dimensions match the filters, using `'(all)'` for each unfiltered dimension. Never sum `sessions` across rows.
 * `session_inferences` excludes background calls without a session id.
 
+### 6. `v_ge_app_agy_code_citations`
+* **Grain:** one row per citation (a response that closely matched public source code can carry several). **Source:** `inference_response`, `output.attributionContext.citationMetadata.citations[]`.
+* **Columns:** `event_date`, `event_timestamp`, `user_email`, `client_name`, `model`, `trajectory_id`, `request_id`, `url`, `license`, `start_index`, `end_index`, `matched_chars`.
+* Never returns the matched text, only the cited URL, its license (`'unknown'` if not reported) and the character range.
+* Citations are rare; the view covers all retained history.
+
 ### Not reported (by design)
 | Metric | Reason |
 | :--- | :--- |

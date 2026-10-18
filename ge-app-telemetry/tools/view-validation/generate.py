@@ -12,6 +12,8 @@ Edge cases deliberately included:
   * missing user / client labels, missing token counts
   * permission accept/reject events WITHOUT a model label (as in live logs)
   * no events within +-3h of the 7-day / 90-day window boundaries
+  * code citations on ~3% of responses (1-2 each), some with empty license and
+    some without startIndex (protobuf omits 0), including on duplicate rows
 """
 import json, os, random, sys, uuid
 from collections import defaultdict
@@ -22,6 +24,9 @@ SEED = 42
 N_USERS = 20
 N_DAYS = 30
 rnd = random.Random(SEED)
+crnd = random.Random(SEED + 1)   # separate stream for citations (keeps the rest of the data unchanged)
+CITE_URLS = ["https://github.com/example/alpha", "https://github.com/example/beta", "https://gitlab.com/example/gamma"]
+CITE_LICENSES = ["", "mit", "apache-2.0"]
 NOW = datetime.now(timezone.utc).replace(microsecond=0)
 END = NOW - timedelta(hours=1)                    # last event time
 START = (END - timedelta(days=N_DAYS)).replace(hour=0, minute=0, second=0)
@@ -52,14 +57,25 @@ def add_response(dt, user, client, version, model, exp, traj, tokens):
     meta = None if tokens is None else {
         "totaltokencount": str(tokens[0]), "prompttokencount": str(tokens[1]), "candidatestokencount": str(tokens[2]),
         "thoughtstokencount": str(tokens[3]), "cachedcontenttokencount": str(tokens[4]), "quotatype": "REGULAR_QUOTA"}
+    cits = None
+    if crnd.random() < 0.03:
+        cits = []
+        for _ in range(crnd.randint(1, 2)):
+            start = crnd.choice([0, crnd.randint(1, 2000)]); end = start + crnd.randint(50, 400)
+            c = {"url": crnd.choice(CITE_URLS), "license": crnd.choice(CITE_LICENSES), "endindex": float(end)}
+            if start: c["startindex"] = float(start)       # protobuf JSON omits zero values
+            cits.append(c)
+    output = {"candidates": [{"messages": [{"author": "MODEL", "content": "synthetic output"}]}]}
+    if cits:
+        output["attributioncontext"] = {"citationmetadata": {
+            "_type": "type.googleapis.com/google.cloud.businessaicode.logging.v1.CitationMetadata", "citations": cits}}
     row = {"timestamp": ts(dt), "receiveTimestamp": ts(dt + timedelta(seconds=1)), "insertId": iid,
            "logName": LOG.format("inference_response"), "severity": "INFO", "resource": RES, "labels": lab,
            "jsonpayload_v1_inferenceresponselog": {"_type": "type.googleapis.com/google.cloud.businessaicode.logging.v1.InferenceResponseLog",
-               "experience": exp, "metadata": meta,
-               "output": {"candidates": [{"messages": [{"author": "MODEL", "content": "synthetic output"}]}]}}}
+               "experience": exp, "metadata": meta, "output": output}}
     resp.append(row)
     truth_resp.append({"dt": dt, "user": user or "unknown", "client": client or "unspecified", "model": model,
-                       "exp": exp, "traj": traj, "tokens": tokens})
+                       "exp": exp, "traj": traj, "tokens": tokens, "cits": cits or []})
     reqs.append({"timestamp": ts(dt - timedelta(milliseconds=500)), "receiveTimestamp": ts(dt), "insertId": uuid.uuid4().hex[:16],
                  "logName": LOG.format("inference_request"), "severity": "INFO", "resource": RES, "labels": lab,
                  "jsonpayload_v1_inferencerequestlog": {"_type": "type.googleapis.com/google.cloud.businessaicode.logging.v1.InferenceRequestLog",
@@ -162,6 +178,13 @@ gt["permissions"] = {"requests": len(perm), "accepted": sum(c["outcome"] == "ACC
                      "rejected": sum(c["outcome"] == "REJECTED" for c in perm),
                      "resolved_events": sum(c["etype"] == "InferenceResolved" for c in truth_ct),
                      "client_events": len(truth_ct)}
+cits = [c for r in truth_resp for c in r["cits"]]
+by_url, by_lic = defaultdict(int), defaultdict(int)
+for c in cits:
+    by_url[c["url"]] += 1; by_lic[c["license"] or "unknown"] += 1
+gt["citations"] = {"total": len(cits), "by_url": dict(by_url), "by_license": dict(by_lic),
+                   "matched_chars": int(sum(c["endindex"] - c.get("startindex", 0) for c in cits)),
+                   "responses": sum(1 for r in truth_resp if r["cits"])}
 
 os.makedirs(OUT, exist_ok=True)
 for name, rows in (("inference_response", resp), ("inference_request", reqs), ("client_telemetry", ct)):
@@ -171,4 +194,5 @@ with open(os.path.join(OUT, "ground_truth.json"), "w") as f:
     json.dump(gt, f, indent=1, default=list)
 print(json.dumps({"responses_rows": len(resp), "responses_unique": len(truth_resp), "requests": len(reqs),
                   "client_rows": len(ct), "client_unique": len(truth_ct), "days": len(gt["daily"]),
+                  "citations": gt["citations"]["total"],
                   "range": [START.isoformat(), END.isoformat()]}))

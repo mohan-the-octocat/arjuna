@@ -35,7 +35,7 @@ HOST=0.0.0.0 ./start.sh 8085
 | **Adoption & Enablement** | Users · Peak daily active users · Days with activity · Inferences · Clients | Daily active users · Surface mix (Hub / CLI / IDE) · **Daily sessions** (exact) + inferences per session · Inferences per active user · Client versions |
 | **Fleet & Models** (7d / 90d toggle) | — | Inference share by model · Daily inferences by model · Reasoning tier (experience) · Model × client · **Model table** |
 | **Usage & Tokens** | Total / prompt / output / thinking / cached tokens · Tokens per inference | Daily tokens by type · Tokens by model · Tokens by experience · Tokens per inference · Largest single inference by model |
-| **Value & Quality** | Permission requests · Accepted · Rejected · Grant rate · Finished turns | Decisions per day · Grant rate by user · Grant rate by client · Finished turns per day |
+| **Value & Quality** | Permission requests · Accepted · Rejected · Grant rate · Finished turns · Code citations | Decisions per day · Grant rate by user · Grant rate by client · Finished turns per day · **Code citations table** (cited public source and license; never the matched text) |
 
 **Global controls:** date range (7 / 30 / 90 days) for daily charts, and user, client and model filters.
 
@@ -56,6 +56,7 @@ HOST=0.0.0.0 ./start.sh 8085
 | `daily_sessions` | `v_ge_app_agy_daily_sessions` | Exact daily sessions for any filter combination |
 | `user_summary` | `v_ge_app_agy_user_summary` | Overview KPIs and user table (7d / 90d, exact) |
 | `model_summary` | `v_ge_app_agy_model_summary` | Fleet & Models table and share donut (7d / 90d, exact) |
+| `code_citations` | `v_ge_app_agy_code_citations` | Code citations KPI and table (Value & Quality) |
 
 `data/` is git-ignored: it contains user emails and is regenerated on every fetch.
 
@@ -64,7 +65,7 @@ HOST=0.0.0.0 ./start.sh 8085
 ## Directory structure
 ```text
 local-web/
-├── fetch_data.sh       # Queries the 6 views and writes data/telemetry.json
+├── fetch_data.sh       # Queries the 7 views and writes data/telemetry.json
 ├── server.mjs          # Zero-dependency Node.js HTTP server (static files, /api/data, /api/refresh)
 ├── start.sh / stop.sh  # Background server lifecycle
 ├── public/index.html   # Dashboard UI (Chart.js 4.4.4, pinned)
