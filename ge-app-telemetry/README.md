@@ -325,9 +325,9 @@ cd ge-app-telemetry/dashboards/local-web
 **Global controls**
 | Control | Applies to |
 | :--- | :--- |
-| Range: last 7 / 30 / 90 days | Daily charts and KPIs computed from daily data |
+| Range: last 7 / 30 / 90 days (UTC dates, including today) | Daily charts and KPIs computed from daily data |
 | User / client / model filters | All charts that have that dimension. A banner shows active filters, with *Clear filters* |
-| 7d / 90d toggle (Overview, Fleet & Models) | KPIs and tables computed from the exact window summaries |
+| Rolling 7 / 90 days toggle (Overview, Fleet & Models) | KPIs and tables from the exact window summaries: the last 7 × 24 or 90 × 24 hours up to now, so totals can differ from a 7-day date range |
 
 **Tabs**
 | Tab | KPIs | Charts & tables |

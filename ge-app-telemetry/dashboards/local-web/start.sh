@@ -56,7 +56,8 @@ if kill -0 "${NEW_PID}" 2>/dev/null; then
   fi
   echo "===================="
 else
-  echo "Failed to start server. Check logs:" >&2
+  rm -f "${PID_FILE}"
+  echo "Failed to start server (is the port already in use?). Check logs:" >&2
   cat "${SCRIPT_DIR}/server.log" >&2
   exit 1
 fi

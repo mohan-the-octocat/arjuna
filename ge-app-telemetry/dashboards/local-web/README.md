@@ -37,7 +37,7 @@ HOST=0.0.0.0 ./start.sh 8085
 | **Usage & Tokens** | Total / prompt / output / thinking / cached tokens · Tokens per inference | Daily tokens by type · Tokens by model · Tokens by experience · Tokens per inference · Largest single inference by model |
 | **Value & Quality** | Permission requests · Accepted · Rejected · Grant rate · Finished turns · Code citations | Decisions per day · Grant rate by user · Grant rate by client · Finished turns per day · **Code citations table** (cited public source and license; never the matched text) |
 
-**Global controls:** date range (7 / 30 / 90 days) for daily charts, and user, client and model filters.
+**Global controls:** date range (last 7 / 30 / 90 **UTC dates**, including today) for daily charts, and user, client and model filters. The **Rolling 7 / 90 days** toggle on Overview and Fleet & Models is different: it uses the summary views' rolling window (the last 7 × 24 or 90 × 24 hours up to now), so its totals can differ from a 7-day date range.
 
 **Data notes:**
 * No cost or billing estimates are shown.
