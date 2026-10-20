@@ -60,6 +60,7 @@ query_view adoption        "SELECT * FROM ${V}.v_ge_app_agy_adoption\` ORDER BY 
 query_view trust_quality   "SELECT * FROM ${V}.v_ge_app_agy_trust_quality\` ORDER BY event_date"
 query_view token_economics "SELECT * FROM ${V}.v_ge_app_agy_token_economics\` ORDER BY event_date"
 query_view daily_sessions  "SELECT * FROM ${V}.v_ge_app_agy_daily_sessions\` ORDER BY event_date"
+query_view code_citations  "SELECT * FROM ${V}.v_ge_app_agy_code_citations\` ORDER BY event_timestamp"
 
 # Window summaries (7d / 90d, exact distinct counts, incl. all_users / all_models rows)
 query_view user_summary    "SELECT * FROM ${V}.v_ge_app_agy_user_summary\` ORDER BY window_days, scope DESC, total_tokens DESC"
@@ -76,9 +77,11 @@ jq -n \
   --slurpfile daily_sessions "${DATA_DIR}/daily_sessions.json" \
   --slurpfile user_summary "${DATA_DIR}/user_summary.json" \
   --slurpfile model_summary "${DATA_DIR}/model_summary.json" \
+  --slurpfile code_citations "${DATA_DIR}/code_citations.json" \
   '{metadata: {project_id: $project_id, dataset_id: $dataset_id, fetched_at: $fetched_at},
     adoption: $adoption[0], trust_quality: $trust_quality[0], token_economics: $token_economics[0],
-    daily_sessions: $daily_sessions[0], user_summary: $user_summary[0], model_summary: $model_summary[0]}' \
+    daily_sessions: $daily_sessions[0], user_summary: $user_summary[0], model_summary: $model_summary[0],
+    code_citations: $code_citations[0]}' \
   > "${TMP_BUNDLE}"
 mv "${TMP_BUNDLE}" "${DATA_DIR}/telemetry.json"
 

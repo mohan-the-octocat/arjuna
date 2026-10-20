@@ -35,6 +35,7 @@ locals {
     "03_v_ge_app_agy_token_economics.sql",
     "04_v_ge_app_agy_model_summary.sql",
     "05_v_ge_app_agy_daily_sessions.sql",
+    "06_v_ge_app_agy_code_citations.sql",
   ]
 
   views = {

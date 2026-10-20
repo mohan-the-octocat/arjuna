@@ -23,6 +23,7 @@ Your real datasets (`ge_app_agy_raw`, `ge_app_agy_telemetry`) are never touched.
 - Missing user / client labels and missing token counts.
 - Permission accept/reject events **without** a model label (as in live logs).
 - No events within ±3 h of the 7-day window boundary, so the window checks are deterministic.
+- Code citations on about 3% of responses, some with an empty license or without `startIndex` (protobuf omits zero values).
 
 ## Checks
 - `v_ge_app_agy_daily_sessions`: every day × user × client × model combination (sessions, users, inferences).
@@ -31,3 +32,4 @@ Your real datasets (`ge_app_agy_raw`, `ge_app_agy_telemetry`) are never touched.
 - `v_ge_app_agy_trust_quality`: permission requests / accepted / rejected, finished turns, events.
 - `v_ge_app_agy_user_summary`: 7d and 90d, every user plus the all-users row (9 metrics); token share sums to 1.
 - `v_ge_app_agy_model_summary`: 7d and 90d, every model plus the all-models row.
+- `v_ge_app_agy_code_citations`: citation count, per URL, per license, matched characters and responses with citations.

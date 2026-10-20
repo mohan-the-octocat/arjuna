@@ -80,10 +80,10 @@
     </div>
     <div class="controls">
       <span class="control-label">Range</span>
-      <select id="f-range" title="Date range for daily charts">
-        <option value="7">Last 7 days</option>
-        <option value="30" selected>Last 30 days</option>
-        <option value="90">Last 90 days</option>
+      <select id="f-range" title="Daily charts: the last N calendar days in UTC, including today">
+        <option value="7">Last 7 days (UTC dates)</option>
+        <option value="30" selected>Last 30 days (UTC dates)</option>
+        <option value="90">Last 90 days (UTC dates)</option>
       </select>
       <select id="f-user" title="Filter by user"><option value="">All users</option></select>
       <select id="f-client" title="Filter by client"><option value="">All clients</option></select>
@@ -107,7 +107,7 @@
   <section class="panel active" id="panel-overview">
     <div class="section-bar">
       <h2>Team at a glance</h2>
-      <div class="seg" data-window-toggle><button data-w="7" class="on">Last 7 days</button><button data-w="90">Last 90 days</button></div>
+      <div class="seg" data-window-toggle><button data-w="7" class="on" title="Rolling window: the last 7 × 24 hours up to now">Rolling 7 days</button><button data-w="90" title="Rolling window: the last 90 × 24 hours up to now">Rolling 90 days</button></div>
     </div>
     <div class="kpis" id="ov-kpis"></div>
     <div class="grid">
@@ -137,7 +137,7 @@
   <section class="panel" id="panel-fleet">
     <div class="section-bar">
       <h2>Fleet &amp; Models</h2>
-      <div class="seg" data-window-toggle><button data-w="7" class="on">Last 7 days</button><button data-w="90">Last 90 days</button></div>
+      <div class="seg" data-window-toggle><button data-w="7" class="on" title="Rolling window: the last 7 × 24 hours up to now">Rolling 7 days</button><button data-w="90" title="Rolling window: the last 90 × 24 hours up to now">Rolling 90 days</button></div>
     </div>
     <div class="grid">
       <div class="card"><h3>Inference share by model</h3><div class="hint">Selected window (exact).</div><div class="chart-box"><canvas id="fl-share"></canvas></div></div>
@@ -167,13 +167,17 @@
 
   <!-- ============================ VALUE & QUALITY ============================ -->
   <section class="panel" id="panel-quality">
-    <div class="section-bar"><h2>Value &amp; Quality</h2><span class="note">Human-in-the-loop permission decisions · selected range, user &amp; client filters (permission events carry no model label, so the model filter does not apply)</span></div>
+    <div class="section-bar"><h2>Value &amp; Quality</h2><span class="note">Human-in-the-loop permission decisions · selected range, user &amp; client filters (permission events carry no model label, so the model filter does not apply to the permission charts; it does apply to code citations)</span></div>
     <div class="kpis" id="vq-kpis"></div>
     <div class="grid">
       <div class="card"><h3>Permission decisions per day</h3><div class="hint">Accepted vs rejected tool / command permission prompts.</div><div class="chart-box"><canvas id="vq-daily"></canvas></div></div>
       <div class="card"><h3>Grant rate by user</h3><div class="hint">Accepted ÷ permission requests.</div><div class="chart-box"><canvas id="vq-user"></canvas></div></div>
       <div class="card"><h3>Grant rate by client</h3><div class="hint">Accepted ÷ permission requests.</div><div class="chart-box"><canvas id="vq-model"></canvas></div></div>
       <div class="card"><h3>Finished turns per day</h3><div class="hint">'InferenceResolved' events — a turn finished (activity signal, not a success signal).</div><div class="chart-box"><canvas id="vq-turns"></canvas></div></div>
+      <div class="card wide">
+        <h3>Code citations</h3><div class="hint">Model responses that closely matched public source code: the cited source and its license, never the matched text. Selected range &amp; filters (the model filter applies here). Latest 200 shown.</div>
+        <div class="table-wrap"><table id="vq-citations"></table></div>
+      </div>
     </div>
   </section>
 </div>
@@ -201,6 +205,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uniq = arr => [...new Set(arr)].filter(v => v !== null && v !== undefined && v !== '').sort();
 const sumBy = (rows, key) => rows.reduce((s, r) => s + num(r[key]), 0);
 const groupSum = (rows, keyFn, valKey) => { const m = {}; rows.forEach(r => { const k = keyFn(r); m[k] = (m[k] || 0) + num(r[valKey]); }); return m; };
+const COLOR_MAP = {};
+function colorFor(kind, key) { const k = kind + ':' + key; if (!(k in COLOR_MAP)) COLOR_MAP[k] = PALETTE[Object.keys(COLOR_MAP).filter(x => x.startsWith(kind + ':')).length % PALETTE.length]; return COLOR_MAP[k]; }
+const modelColor = m => colorFor('model', m), clientColor = c => colorFor('client', c);
 const fmtTime = t => t ? String(t).replace(' UTC', '').slice(0, 16) : '—';
 
 function todayUTC() { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); }
@@ -255,7 +262,7 @@ function summaryRow() {
 // ----------------------------------------------------------------------------
 function renderOverview() {
   const { row, scope } = summaryRow(); const r = row || {};
-  const sub = `Last ${state.windowDays} days · ${scope}` + (state.client ? ' · client filter not applied' : '');
+  const sub = `Rolling ${state.windowDays} days (${state.windowDays} × 24 h) · ${scope}` + (state.client ? ' · client filter not applied' : '');
   kpiCards('ov-kpis', [
     { label: 'Active users', value: fmt(r.active_users), sub },
     { label: 'Inferences', value: fmt(r.inferences), sub },
@@ -271,7 +278,7 @@ function renderOverview() {
   const usersByDay = {}; ad.forEach(x => { (usersByDay[x.event_date] = usersByDay[x.event_date] || new Set()).add(x.user_email); });
   chart('ov-daily', { type: 'bar', data: { labels: dayLabels(), datasets: [
       { type: 'bar', label: 'Inferences', data: days.map(d => infByDay[d] || 0), backgroundColor: PALETTE[0], yAxisID: 'y' },
-      { type: 'line', label: 'Active users', data: days.map(d => usersByDay[d] ? usersByDay[d].size : 0), borderColor: PALETTE[1], backgroundColor: PALETTE[1], yAxisID: 'y1', tension: .2 } ] },
+      { type: 'line', label: 'Active users', data: days.map(d => usersByDay[d] ? usersByDay[d].size : 0), borderColor: PALETTE[1], backgroundColor: PALETTE[1], yAxisID: 'y1' } ] },
     options: { scales: { y: { beginAtZero: true, title: { display: true, text: 'Inferences' } }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { precision: 0 }, title: { display: true, text: 'Users' } } } } }, ad.length === 0);
   const tokByDay = groupSum(te, x => x.event_date, 'total_tokens');
   chart('ov-tokens', { type: 'bar', data: { labels: dayLabels(), datasets: [{ label: 'Total tokens', data: days.map(d => tokByDay[d] || 0), backgroundColor: PALETTE[3] }] },
@@ -318,12 +325,12 @@ function renderAdoption() {
     { label: 'Inferences', value: fmt(sumBy(ad, 'total_inferences')), sub: `Last ${state.range} days` },
     { label: 'Clients in use', value: fmt(uniq(ad.map(x => x.client_name)).length), sub: uniq(ad.map(x => x.client_name)).join(', ') || '—' },
   ]);
-  chart('ad-dau', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Active users', data: days.map(d => usersByDay[d] ? usersByDay[d].size : 0), borderColor: PALETTE[1], backgroundColor: PALETTE[1], tension: .2 }] },
+  chart('ad-dau', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Active users', data: days.map(d => usersByDay[d] ? usersByDay[d].size : 0), borderColor: PALETTE[1], backgroundColor: PALETTE[1] }] },
     options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }, ad.length === 0);
   const clients = uniq(ad.map(x => x.client_name));
   chart('ad-surface', { type: 'bar', data: { labels: dayLabels(), datasets: clients.map((c, i) => {
       const m = groupSum(ad.filter(x => x.client_name === c), x => x.event_date, 'total_inferences');
-      return { label: c, data: days.map(d => m[d] || 0), backgroundColor: PALETTE[i % PALETTE.length] }; }) },
+      return { label: c, data: days.map(d => m[d] || 0), backgroundColor: clientColor(c) }; }) },
     options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } }, ad.length === 0);
   // Exact daily sessions: pick the pre-aggregated row matching the active filters ('(all)' = not filtered)
   const want = { u: state.user || '(all)', c: state.client || '(all)', m: state.model || '(all)' };
@@ -332,13 +339,14 @@ function renderAdoption() {
   const sessByDay = {}, dsInf = {}; ds.forEach(x => { sessByDay[x.event_date] = num(x.sessions); dsInf[x.event_date] = num(x.session_inferences); });
   chart('ad-sessions', { type: 'bar', data: { labels: dayLabels(), datasets: [
       { type: 'bar', label: 'Sessions', data: days.map(d => sessByDay[d] || 0), backgroundColor: PALETTE[5], yAxisID: 'y' },
-      { type: 'line', label: 'Inferences per session', data: days.map(d => sessByDay[d] ? +(dsInf[d] / sessByDay[d]).toFixed(1) : null), borderColor: PALETTE[2], backgroundColor: PALETTE[2], yAxisID: 'y1', spanGaps: true, tension: .2 } ] },
+      { type: 'line', label: 'Inferences per session', data: days.map(d => sessByDay[d] ? +(dsInf[d] / sessByDay[d]).toFixed(1) : null), borderColor: PALETTE[2], backgroundColor: PALETTE[2], yAxisID: 'y1', spanGaps: false } ] },
     options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'Sessions' } }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Inf / session' } } } } }, ds.length === 0);
-  chart('ad-intensity', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Inferences per active user', data: days.map(d => usersByDay[d] ? +(infByDay[d] / usersByDay[d].size).toFixed(1) : null), borderColor: PALETTE[0], backgroundColor: PALETTE[0], spanGaps: true, tension: .2 }] },
+  chart('ad-intensity', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Inferences per active user', data: days.map(d => usersByDay[d] ? +(infByDay[d] / usersByDay[d].size).toFixed(1) : null), borderColor: PALETTE[0], backgroundColor: PALETTE[0], spanGaps: false }] },
     options: { scales: { y: { beginAtZero: true } } } }, ad.length === 0);
   const ver = groupSum(ad, x => `${x.client_name} ${x.client_version}`, 'total_inferences'); const vk = Object.keys(ver).sort();
+  document.getElementById('ad-versions').parentElement.style.height = Math.max(280, 22 * vk.length + 60) + 'px';
   chart('ad-versions', { type: 'bar', data: { labels: vk, datasets: [{ label: 'Inferences', data: vk.map(k => ver[k]), backgroundColor: PALETTE[2] }] },
-    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } } }, vk.length === 0);
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true }, y: { ticks: { autoSkip: false, font: { size: 11 } } } } } }, vk.length === 0);
 }
 
 const MODEL_COLS = [
@@ -349,14 +357,14 @@ const MODEL_COLS = [
 function renderFleet() {
   const w = String(state.windowDays);
   const ms = (DATA.model_summary || []).filter(r => String(r.window_days) === w && r.scope === 'model');
-  chart('fl-share', { type: 'doughnut', data: { labels: ms.map(r => r.model), datasets: [{ data: ms.map(r => num(r.inferences)), backgroundColor: ms.map((_, i) => PALETTE[i % PALETTE.length]) }] },
+  chart('fl-share', { type: 'doughnut', data: { labels: ms.map(r => r.model), datasets: [{ data: ms.map(r => num(r.inferences)), backgroundColor: ms.map(r => modelColor(r.model)) }] },
     options: { plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: c => `${c.label}: ${fmt(c.raw)} (${pct(ms[c.dataIndex].inference_share)})` } } } } }, ms.length === 0);
 
   const ad = filtered(DATA.adoption); const te = filtered(DATA.token_economics); const days = dateList(state.range);
   const models = uniq(ad.map(x => x.model));
   chart('fl-daily', { type: 'bar', data: { labels: dayLabels(), datasets: models.map((m, i) => {
       const g = groupSum(ad.filter(x => x.model === m), x => x.event_date, 'total_inferences');
-      return { label: m, data: days.map(d => g[d] || 0), backgroundColor: PALETTE[i % PALETTE.length] }; }) },
+      return { label: m, data: days.map(d => g[d] || 0), backgroundColor: modelColor(m) }; }) },
     options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } }, ad.length === 0);
   const ex = groupSum(te, x => x.experience, 'total_inferences'); const ek = Object.keys(ex).sort((a, b) => ex[b] - ex[a]);
   chart('fl-experience', { type: 'bar', data: { labels: ek, datasets: [{ label: 'Inferences', data: ek.map(k => ex[k]), backgroundColor: PALETTE[3] }] },
@@ -364,7 +372,7 @@ function renderFleet() {
   const clients = uniq(ad.map(x => x.client_name));
   chart('fl-client', { type: 'bar', data: { labels: models, datasets: clients.map((c, i) => {
       const g = groupSum(ad.filter(x => x.client_name === c), x => x.model, 'total_inferences');
-      return { label: c, data: models.map(m => g[m] || 0), backgroundColor: PALETTE[i % PALETTE.length] }; }) },
+      return { label: c, data: models.map(m => g[m] || 0), backgroundColor: clientColor(c) }; }) },
     options: { scales: { y: { beginAtZero: true } } } }, ad.length === 0);
 
   const { key, dir } = state.modelSort; const isNum = (MODEL_COLS.find(c => c[0] === key) || [])[2];
@@ -399,8 +407,8 @@ function renderTokens() {
       { label: 'Prompt', data: days.map(d => P[d] || 0), backgroundColor: PALETTE[0], stack: 'types' },
       { label: 'Output', data: days.map(d => C[d] || 0), backgroundColor: PALETTE[1], stack: 'types' },
       { label: 'Thinking', data: days.map(d => T[d] || 0), backgroundColor: PALETTE[3], stack: 'types' },
-      { type: 'line', label: 'Total', data: days.map(d => TOT[d] || 0), borderColor: '#0F172A', backgroundColor: '#0F172A', tension: .2 },
-      { type: 'line', label: 'Cached', data: days.map(d => CA[d] || 0), borderColor: PALETTE[2], backgroundColor: PALETTE[2], borderDash: [5, 4], tension: .2 } ] },
+      { type: 'line', label: 'Total', data: days.map(d => TOT[d] || 0), borderColor: '#0F172A', backgroundColor: '#0F172A' },
+      { type: 'line', label: 'Cached', data: days.map(d => CA[d] || 0), borderColor: PALETTE[2], backgroundColor: PALETTE[2], borderDash: [5, 4] } ] },
     options: { scales: { x: { stacked: true }, y: { stacked: false, beginAtZero: true, ticks: { callback: v => fmtCompact(v) } } } } }, te.length === 0);
   const models = uniq(te.map(x => x.model)); const g = k => groupSum(te, x => x.model, k);
   const mp = g('prompt_tokens'), mc = g('candidates_tokens'), mt = g('thoughts_tokens');
@@ -412,7 +420,7 @@ function renderTokens() {
   const ex = groupSum(te, x => x.experience, 'total_tokens'); const ek = Object.keys(ex).sort((a, b) => ex[b] - ex[a]);
   chart('tk-experience', { type: 'bar', data: { labels: ek, datasets: [{ label: 'Total tokens', data: ek.map(k => ex[k]), backgroundColor: PALETTE[3] }] },
     options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { callback: v => fmtCompact(v) } } } } }, ek.length === 0);
-  chart('tk-per-inf', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Tokens per inference', data: days.map(d => I[d] ? Math.round((TOT[d] || 0) / I[d]) : null), borderColor: PALETTE[0], backgroundColor: PALETTE[0], spanGaps: true, tension: .2 }] },
+  chart('tk-per-inf', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Tokens per inference', data: days.map(d => I[d] ? Math.round((TOT[d] || 0) / I[d]) : null), borderColor: PALETTE[0], backgroundColor: PALETTE[0], spanGaps: false }] },
     options: { scales: { y: { beginAtZero: true, ticks: { callback: v => fmtCompact(v) } } } } }, te.length === 0);
   const mx = {}; te.forEach(x => { if (x.max_tokens_per_inference !== null && x.max_tokens_per_inference !== undefined) mx[x.model] = Math.max(mx[x.model] || 0, num(x.max_tokens_per_inference)); });
   const mk = Object.keys(mx).sort((a, b) => mx[b] - mx[a]);
@@ -423,6 +431,7 @@ function renderTokens() {
 function renderQuality() {
   // Permission / client events carry no model label, so the model filter is not applied here.
   const tq = filtered(DATA.trust_quality, { ignoreModel: true }); const days = dateList(state.range);
+  const cz = filtered(DATA.code_citations);
   const req = sumBy(tq, 'permission_requests_total'), acc = sumBy(tq, 'permission_grants_accepted'), rej = sumBy(tq, 'permission_grants_rejected');
   kpiCards('vq-kpis', [
     { label: 'Permission requests', value: fmt(req), sub: `Last ${state.range} days` },
@@ -430,7 +439,9 @@ function renderQuality() {
     { label: 'Rejected', value: fmt(rej) },
     { label: 'Grant rate', value: pct(ratio(acc, req)) },
     { label: 'Finished turns', value: fmt(sumBy(tq, 'inference_resolved_events')), sub: 'InferenceResolved events' },
+    { label: 'Code citations', value: fmt(cz.length), sub: `${uniq(cz.map(c => c.url)).length} public source(s)` },
   ]);
+  renderCitations(cz);
   const A = groupSum(tq, x => x.event_date, 'permission_grants_accepted'), R = groupSum(tq, x => x.event_date, 'permission_grants_rejected');
   chart('vq-daily', { type: 'bar', data: { labels: dayLabels(), datasets: [
       { label: 'Accepted', data: days.map(d => A[d] || 0), backgroundColor: PALETTE[1] },
@@ -445,8 +456,17 @@ function renderQuality() {
   chart('vq-model', { type: 'bar', data: { labels: m.ks, datasets: [{ label: 'Grant rate %', data: m.vals, backgroundColor: PALETTE[3] }] },
     options: { indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.raw}% of ${fmt(m.q[c.label])} requests` } } }, scales: { x: { min: 0, max: 100 } } } }, m.ks.length === 0);
   const T = groupSum(tq, x => x.event_date, 'inference_resolved_events');
-  chart('vq-turns', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Finished turns', data: days.map(d => T[d] || 0), borderColor: PALETTE[5], backgroundColor: PALETTE[5], tension: .2 }] },
+  chart('vq-turns', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Finished turns', data: days.map(d => T[d] || 0), borderColor: PALETTE[5], backgroundColor: PALETTE[5] }] },
     options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }, tq.length === 0);
+}
+
+function renderCitations(rows) {
+  const t = document.getElementById('vq-citations');
+  const sorted = [...rows].sort((a, b) => String(b.event_timestamp).localeCompare(String(a.event_timestamp))).slice(0, 200);
+  const link = u => /^https?:\/\//.test(u || '') ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>` : esc(u ?? '—');
+  t.innerHTML = `<thead><tr><th>Time (UTC)</th><th>User</th><th>Client</th><th>Model</th><th>Source</th><th>License</th><th class="num">Matched chars</th></tr></thead>` +
+    `<tbody>${sorted.length ? sorted.map(r => `<tr><td>${esc(fmtTime(r.event_timestamp))}</td><td>${esc(r.user_email)}</td><td>${esc(r.client_name)}</td><td>${esc(r.model)}</td><td>${link(r.url)}</td><td>${esc(r.license)}</td><td class="num">${fmt(r.matched_chars)}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="empty">No code citations in the current selection.</td></tr>'}</tbody>`;
 }
 
 // ----------------------------------------------------------------------------
@@ -479,7 +499,10 @@ function setData(data) {
   const all = [...(data.adoption || []), ...(data.token_economics || []), ...(data.trust_quality || [])];
   fillSelect('f-user', uniq([...all.map(r => r.user_email), ...(data.user_summary || []).map(r => r.user_email)]), 'All users');
   fillSelect('f-client', uniq(all.map(r => r.client_name)), 'All clients');
-  fillSelect('f-model', uniq([...all.map(r => r.model), ...(data.model_summary || []).map(r => r.model)]), 'All models');
+  // Models come from model responses only: client events carry no model or placeholder labels.
+  const models = uniq([...(data.adoption || []), ...(data.token_economics || []), ...(data.model_summary || [])].map(r => r.model));
+  models.forEach(modelColor); uniq(all.map(r => r.client_name)).forEach(clientColor); // stable colors in sorted order
+  fillSelect('f-model', models, 'All models');
   state.user = document.getElementById('f-user').value; state.client = document.getElementById('f-client').value; state.model = document.getElementById('f-model').value;
   render();
 }

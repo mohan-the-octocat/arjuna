@@ -37,7 +37,7 @@ Turn Google Antigravity usage logs into **BigQuery datasets, ready-made views an
 | :--- | :--- |
 | **Log sink** `ge-app-agy-telemetry-sink` | Routes every Antigravity log entry (`businessaicode.googleapis.com`) from Cloud Logging into BigQuery in near real time |
 | **RAW dataset** `ge_app_agy_raw` | The complete logs (requests, responses, client events), **including prompts and model responses**. Locked to project owners |
-| **Views dataset** `ge_app_agy_telemetry` | 6 ready-made views (adoption, sessions, tokens, permission decisions, per-user and per-model summaries). **No prompt text.** Locked to project owners until you share it |
+| **Views dataset** `ge_app_agy_telemetry` | 7 ready-made views (adoption, sessions, tokens, permission decisions, per-user and per-model summaries, code citations). **No prompt text.** Locked to project owners until you share it |
 | **Local web dashboard** | A 5-tab dashboard (Overview, Adoption & Enablement, Fleet & Models, Usage & Tokens, Value & Quality) that runs on your workstation |
 | **Looker Studio** | Point Looker Studio at the views for shareable reports |
 | **View validation tool** | Tests every view against synthetic data with known answers |
@@ -97,6 +97,7 @@ There are no scheduled jobs and no data copies: the views are always current, ty
 | User email, model, client, client version, session (trajectory) id, request id, timestamps | ✅ | ✅ |
 | Token counts (total, prompt, output, thinking, cached) and quota type | ✅ | ✅ (aggregated) |
 | Permission decisions (accepted / rejected) | ✅ | ✅ (aggregated) |
+| Code citations: public source URL, its license and the matched character range | ✅ | ✅ (per citation; never the matched text) |
 | **Prompt text** (`inference_request.input.messages[].content`) | ✅ | ❌ never |
 | **Model response text** (`inference_response.output…messages[].content`) | ✅ | ❌ never |
 
@@ -105,7 +106,7 @@ There are no scheduled jobs and no data copies: the views are always current, ty
 | :--- | :--- | :--- |
 | Project **Owners** | ✅ | ✅ |
 | The sink's writer identity | write only | — |
-| The 6 authorized views | ✅ (the views themselves, not their readers) | — |
+| The 7 authorized views | ✅ (the views themselves, not their readers) | — |
 | People / groups you grant **BigQuery Data Viewer on the views dataset** | ❌ | ✅ |
 | Basic project **Viewer** role | ❌ (`deploy.sh` removes the default dataset entry) | ❌ (same) |
 | Project **Editor**, **BigQuery Admin / Data Owner / Data Viewer** (project-level IAM) | ⚠️ ✅ inherited | ⚠️ ✅ inherited |
@@ -225,7 +226,7 @@ Flags on the command line take precedence over the config file.
 6. **Sink:** creates or updates `ge-app-agy-telemetry-sink` with the filter `resource.type="businessaicode.googleapis.com/BAICInstance" AND logName=~"businessaicode.googleapis.com"`, writing to RAW with **no exclusions**.
 7. **Lock-down:** grants the sink's writer identity write access to RAW, and removes BigQuery's default `projectReaders` / `projectWriters` entries from **both** datasets, so only project owners keep dataset access.
 8. **Old prompt audit sink:** if `ge-app-agy-prompts-audit-sink` from an older version exists, it's deleted, because it would keep copying prompts elsewhere.
-9. **Views:** runs `views/deploy_views.sh`, which creates or replaces the 6 views and **authorizes** each one on RAW.
+9. **Views:** runs `views/deploy_views.sh`, which creates or replaces the 7 views and **authorizes** each one on RAW.
 10. **Summary:** prints what was created and how to share access.
 
 ### 6.5 Re-running `deploy.sh`
@@ -236,7 +237,7 @@ It's safe and idempotent. Existing datasets and tables are kept, missing schema 
 > A **newly created** sink takes a few minutes to start routing. In testing, logs written in the first ~3 minutes after creation were never exported, while everything after that arrived completely. **Wait ~5 minutes after the first deployment** before testing. After that, entries normally reach RAW within about a minute and appear in the views immediately. To recover the missed minutes, run `backfill.sh` (see [Backfill history](#125-backfill-history)).
 
 ### 6.7 Deploying with Terraform (alternative to `deploy.sh`)
-`terraform/` creates the same layout: both datasets locked to project owners, the 3 RAW tables from `schemas/raw/`, the sink to RAW, the 6 views from `views/*.sql` and their authorization on RAW.
+`terraform/` creates the same layout: both datasets locked to project owners, the 3 RAW tables from `schemas/raw/`, the sink to RAW, the 7 views from `views/*.sql` and their authorization on RAW.
 
 ```bash
 cd ge-app-telemetry/terraform
@@ -279,11 +280,11 @@ Use **either** `deploy.sh` **or** Terraform for a given project, not both, so th
 # Sink points at RAW, with no exclusions
 gcloud logging sinks describe ge-app-agy-telemetry-sink --format="yaml(name,destination,exclusions)"
 
-# RAW has 3 tables; the views dataset has 6 views and no tables
+# RAW has 3 tables; the views dataset has 7 views and no tables
 bq ls <PROJECT_ID>:ge_app_agy_raw
 bq ls <PROJECT_ID>:ge_app_agy_telemetry
 
-# Access: owners + sink writer + 6 authorized views; no projectReaders / projectWriters
+# Access: owners + sink writer + 7 authorized views; no projectReaders / projectWriters
 bq show --format=prettyjson <PROJECT_ID>:ge_app_agy_raw | jq '.access'
 
 # Generate some activity in Antigravity, wait ~1–2 minutes, then:
@@ -324,9 +325,9 @@ cd ge-app-telemetry/dashboards/local-web
 **Global controls**
 | Control | Applies to |
 | :--- | :--- |
-| Range: last 7 / 30 / 90 days | Daily charts and KPIs computed from daily data |
+| Range: last 7 / 30 / 90 days (UTC dates, including today) | Daily charts and KPIs computed from daily data |
 | User / client / model filters | All charts that have that dimension. A banner shows active filters, with *Clear filters* |
-| 7d / 90d toggle (Overview, Fleet & Models) | KPIs and tables computed from the exact window summaries |
+| Rolling 7 / 90 days toggle (Overview, Fleet & Models) | KPIs and tables from the exact window summaries: the last 7 × 24 or 90 × 24 hours up to now, so totals can differ from a 7-day date range |
 
 **Tabs**
 | Tab | KPIs | Charts & tables |
@@ -335,7 +336,7 @@ cd ge-app-telemetry/dashboards/local-web
 | **Adoption & Enablement** | Users with activity · Peak daily active users · Days with activity · Inferences · Clients in use | Daily active users · Surface mix (Hub / CLI / IDE per day) · **Daily sessions** (exact) with inferences per session · Inferences per active user · Client versions |
 | **Fleet & Models** | — | Inference share by model · Daily inferences by model · Reasoning tier (experience) · Model × client · **Model table** (users, inferences, share, sessions, tokens, avg/max tokens per inference, tiers, clients) |
 | **Usage & Tokens** | Total · Prompt · Output · Thinking · Cached tokens · Tokens per inference | Daily tokens by type (with total and cached lines) · Tokens by model · Tokens by experience · Tokens per inference · Largest single inference by model |
-| **Value & Quality** | Permission requests · Accepted · Rejected · Grant rate · Finished turns | Permission decisions per day · Grant rate by user · Grant rate by client · Finished turns per day |
+| **Value & Quality** | Permission requests · Accepted · Rejected · Grant rate · Finished turns · Code citations | Permission decisions per day · Grant rate by user · Grant rate by client · Finished turns per day · Code citations table (cited source and license, never the matched text) |
 
 **How to read some of the numbers**
 - **Session** = one Antigravity conversation (trajectory). **Inference** = one model response.
@@ -455,6 +456,20 @@ One row per day × **every combination** of user, client and model, where `'(all
 
 **How to use it:** pick the row whose dimensions match your filter, using `'(all)'` for every dimension you don't filter on. For example, all of Hub on one day is `user_email='(all)' AND client_name='antigravity_hub' AND model='(all)'`. **Never sum `sessions` across rows.** A session can span models, users' rows overlap, and summing would double count.
 
+### 10.7 `v_ge_app_agy_code_citations`: responses that matched public code
+One row per **citation**: when a model response closely matches existing public source code, the model reports the source (`output.attributionContext.citationMetadata`). Citations are rare. The view covers all retained history.
+
+| Column | Meaning |
+| :--- | :--- |
+| `event_date`, `event_timestamp` | When the response was generated (UTC) |
+| `user_email`, `client_name`, `model` | Who and what produced it |
+| `trajectory_id`, `request_id` | The session and request, to look up the response in RAW if needed (owners only) |
+| `url` | The public source the output resembles, e.g. a GitHub repository |
+| `license` | The source's license; `'unknown'` if not reported |
+| `start_index`, `end_index`, `matched_chars` | Character range of the match in the response, and its length. The matched text itself is never returned |
+
+Use it for open-source license and IP review: who received code resembling which public projects, under which licenses.
+
 ---
 
 ## 11. Sample queries
@@ -515,6 +530,14 @@ SELECT client_name, client_version, COUNT(DISTINCT user_email) users, SUM(total_
 FROM `<PROJECT_ID>.ge_app_agy_telemetry.v_ge_app_agy_adoption`
 WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
 GROUP BY 1, 2 ORDER BY 1, 2;
+```
+
+**Code citations by source and license, last 90 days**
+```sql
+SELECT url, license, COUNT(*) citations, COUNT(DISTINCT user_email) users, SUM(matched_chars) matched_chars
+FROM `<PROJECT_ID>.ge_app_agy_telemetry.v_ge_app_agy_code_citations`
+WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+GROUP BY 1, 2 ORDER BY citations DESC;
 ```
 
 ---
@@ -632,7 +655,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 | `--raw-dataset-id ID` | | `ge_app_agy_raw` | RAW dataset to delete |
 | `--dataset-id ID` | | `ge_app_agy_telemetry` | Views dataset to delete |
 | `--sink-name NAME` | `-s` | `ge-app-agy-telemetry-sink` | Sink to delete |
-| `--force` | `-f` | off | Delete datasets without per-table prompts |
+| `--force` | `-f` | off | Same as `--yes` (kept for compatibility) |
 | `--impersonate-sa EMAIL` | | | Service account to impersonate |
 | `--yes` / `--headless` | `-y` | off | No confirmation |
 | `--help` | `-h` | | Show help |
@@ -670,7 +693,7 @@ This deletes the sink, the views dataset and the RAW dataset (**all stored logs,
 ### `dashboards/local-web/`
 | Command | Description |
 | :--- | :--- |
-| `./fetch_data.sh <PROJECT_ID> [VIEWS_DATASET]` | Queries the 6 views into `data/telemetry.json` |
+| `./fetch_data.sh <PROJECT_ID> [VIEWS_DATASET]` | Queries the 7 views into `data/telemetry.json` |
 | `./start.sh [PORT]` | Starts the dashboard in the background (default 8085); fetches data first if none exists. Local machine only by default; `HOST=0.0.0.0 ./start.sh` allows network access |
 | `./stop.sh` | Stops it |
 
