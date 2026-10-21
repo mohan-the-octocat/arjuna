@@ -1,0 +1,30 @@
+# ==============================================================================
+# Google Antigravity (Gemini Enterprise) - Terraform Variables Example
+# Copy to terraform.tfvars and edit.
+# ==============================================================================
+
+project_id             = "my-ge-project-id"
+destination_project_id = "my-ge-project-id" # Or a central analytics project
+raw_dataset_id         = "ge_app_agy_raw"       # All fields incl. prompts; owners only
+dataset_id             = "ge_app_agy_telemetry" # Authorized views; no prompt text
+dataset_location       = "us-central1"          # e.g. "asia-northeast1", "EU"
+sink_name              = "ge-app-agy-telemetry-sink"
+
+# RAW retention in days (0 = never expire)
+partition_expiration_days = 90
+
+# Read access to the views dataset only (RAW stays owners-only)
+view_readers = [
+  # "group:telemetry-analysts@example.com",
+  # "user:analyst@example.com",
+]
+
+enable_apis   = true
+allow_destroy = false # true lets `terraform destroy` delete RAW tables and data
+
+resource_labels = {
+  "environment"    = "production"
+  "managed-by"     = "antigravity-extensions"
+  "module"         = "ge-app-telemetry"
+  "telemetry-type" = "gemini-enterprise-antigravity"
+}

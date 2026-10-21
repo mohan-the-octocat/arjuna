@@ -1,0 +1,54 @@
+[
+  {"name": "timestamp", "type": "TIMESTAMP"},
+  {"name": "receiveTimestamp", "type": "TIMESTAMP"},
+  {"name": "insertId", "type": "STRING"},
+  {"name": "logName", "type": "STRING"},
+  {"name": "severity", "type": "STRING"},
+  {"name": "resource", "type": "RECORD", "fields": [
+    {"name": "type", "type": "STRING"},
+    {"name": "labels", "type": "RECORD", "fields": [
+      {"name": "location", "type": "STRING"},
+      {"name": "resource_container", "type": "STRING"}
+    ]}
+  ]},
+  {"name": "labels", "type": "RECORD", "fields": [
+    {"name": "user_id", "type": "STRING"},
+    {"name": "model", "type": "STRING"},
+    {"name": "client_name", "type": "STRING"},
+    {"name": "client_version", "type": "STRING"},
+    {"name": "trajectory_id", "type": "STRING"},
+    {"name": "request_id", "type": "STRING"},
+    {"name": "model_provider", "type": "STRING"}
+  ]},
+  {"name": "jsonpayload_v1_inferenceresponselog", "type": "RECORD", "fields": [
+    {"name": "_type", "type": "STRING"},
+    {"name": "experience", "type": "STRING"},
+    {"name": "metadata", "type": "RECORD", "fields": [
+      {"name": "totaltokencount", "type": "STRING"},
+      {"name": "prompttokencount", "type": "STRING"},
+      {"name": "candidatestokencount", "type": "STRING"},
+      {"name": "thoughtstokencount", "type": "STRING"},
+      {"name": "cachedcontenttokencount", "type": "STRING"},
+      {"name": "quotatype", "type": "STRING"}
+    ]},
+    {"name": "output", "type": "RECORD", "fields": [
+      {"name": "candidates", "type": "RECORD", "mode": "REPEATED", "fields": [
+        {"name": "messages", "type": "RECORD", "mode": "REPEATED", "fields": [
+          {"name": "author", "type": "STRING"},
+          {"name": "content", "type": "STRING"}
+        ]}
+      ]},
+      {"name": "attributioncontext", "type": "RECORD", "fields": [
+        {"name": "citationmetadata", "type": "RECORD", "fields": [
+          {"name": "_type", "type": "STRING"},
+          {"name": "citations", "type": "RECORD", "mode": "REPEATED", "fields": [
+            {"name": "url", "type": "STRING"},
+            {"name": "license", "type": "STRING"},
+            {"name": "startindex", "type": "FLOAT"},
+            {"name": "endindex", "type": "FLOAT"}
+          ]}
+        ]}
+      ]}
+    ]}
+  ]}
+]

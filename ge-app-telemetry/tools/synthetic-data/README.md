@@ -8,6 +8,14 @@ the dashboards and to test new views without real user data.
 **Everything here is fake.** Names, emails (`@cymbalgroup.com`), GCP projects,
 prompts and the secret-shaped strings are invented.
 
+> [!WARNING]
+> **Not yet updated for the current layout** (locked RAW dataset `ge_app_agy_raw` +
+> authorized views in `ge_app_agy_telemetry`). `load.sh` still loads the tables into
+> `ge_app_agy_telemetry` and deploys the view SQL from an earlier version. Until it is
+> ported, load into a **separate test project or dataset** (`--dataset <name>`) and do
+> not point it at a live deployment. To test the current views with synthetic data, use
+> [`../view-validation/`](../view-validation/).
+
 ## Quick start
 
 ```bash

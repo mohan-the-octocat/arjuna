@@ -1,0 +1,47 @@
+# ==============================================================================
+# Google Antigravity (Gemini Enterprise) - Direct Log Sink Configuration
+# ==============================================================================
+# Read by deploy.sh, cleanup.sh and backfill.sh (scalar keys only).
+# Copy to config.yaml (picked up automatically) or pass --config FILE.
+# Terraform uses terraform/terraform.tfvars instead.
+# ==============================================================================
+
+# Source GCP Project ID where Antigravity is active and emitting logs.
+# If left empty, deploy.sh will auto-detect from active gcloud config.
+project_id: ""
+
+# Target GCP Project ID hosting the BigQuery dataset.
+# Defaults to the same as project_id. Set differently for central logging/analytics projects.
+destination_project_id: ""
+
+# RAW dataset: receives ALL log fields, including prompts and model responses.
+# Locked to project owners (default reader/writer entries removed).
+raw_dataset_id: "ge_app_agy_raw"
+
+# Views dataset: authorized views over RAW that never return prompt text.
+# Dashboards and Looker Studio read from here. Also locked to project owners.
+# Convention: ge_app_agy_telemetry for GE App; geap_agy_telemetry for standalone Agent Platform.
+dataset_id: "ge_app_agy_telemetry"
+
+# Physical data residency location for the BigQuery datasets.
+# Examples: "us-central1", "asia-northeast1" (Tokyo), "australia-southeast1" (Sydney), "europe-west1", "EU", "US"
+dataset_location: "us-central1"
+
+# Cloud Logging Log Router sink name (routes to the RAW dataset).
+sink_name: "ge-app-agy-telemetry-sink"
+
+# RAW daily partition lifespan in days before automatic deletion by BigQuery.
+# Applies to all raw data, including prompts. 90 = standard, 365+ for extended history, 0 = never expire.
+partition_expiration_days: 90
+
+# Optional: Service Account to impersonate during deployment (for CI/CD or elevated deployment runners).
+deployer_service_account: ""
+
+# ------------------------------------------------------------------------------
+# Historical Log Backfill Options (used by backfill.sh)
+# ------------------------------------------------------------------------------
+# Days to look back in Cloud Logging (its _Default bucket keeps 30 days by default)
+lookback_days: 7
+
+# Skip entries whose insertId is already in RAW (safe re-runs).
+skip_existing: true

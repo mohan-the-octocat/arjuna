@@ -2,10 +2,17 @@
 # ==============================================================================
 # Google Antigravity (Gemini Enterprise) - Analytical Views Deployer
 # ==============================================================================
-# Deploys standard BigQuery SQL Data Marts (Views) into ge_app_agy_telemetry:
+# Deploys BigQuery views into the views dataset (default: ge_app_agy_telemetry)
+# as AUTHORIZED VIEWS over the locked RAW dataset (default: ge_app_agy_raw):
+# 0. v_ge_app_agy_user_summary
 # 1. v_ge_app_agy_adoption
 # 2. v_ge_app_agy_trust_quality
 # 3. v_ge_app_agy_token_economics
+# 4. v_ge_app_agy_model_summary
+# 5. v_ge_app_agy_daily_sessions
+# 6. v_ge_app_agy_code_citations
+# Each view is added to the RAW dataset's access list (type: view) so owners of
+# the views dataset can query it without direct access to RAW.
 # ==============================================================================
 
 set -euo pipefail
@@ -22,16 +29,19 @@ NC='\033[0m' # No Color
 # ------------------------------------------------------------------------------
 # Default Values
 # ------------------------------------------------------------------------------
-DEFAULT_CONFIG_FILE="../direct-log-sink-to-bq/config.yaml"
+
 DEFAULT_DATASET_ID="ge_app_agy_telemetry"
+DEFAULT_RAW_DATASET_ID="ge_app_agy_raw"
 
 PROJECT_ID=""
 DATASET_ID=""
+RAW_DATASET_ID=""
 CONFIG_FILE=""
 DEPLOYER_SERVICE_ACCOUNT=""
 HEADLESS=false
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_CONFIG_FILE="${SCRIPT_DIR}/../config.yaml"
 
 # ------------------------------------------------------------------------------
 # Helper Functions
@@ -66,9 +76,10 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  -c, --config FILE             Path to YAML config file
+  -c, --config FILE             YAML config file (default: ./config.yaml, else ../config.yaml)
   -p, --project-id ID           Target GCP Project ID hosting BigQuery
-  -d, --dataset-id ID           Target BigQuery dataset ID (default: ${DEFAULT_DATASET_ID})
+  -d, --dataset-id ID           Views dataset ID (default: ${DEFAULT_DATASET_ID})
+  --raw-dataset-id ID           RAW dataset the views read from (default: ${DEFAULT_RAW_DATASET_ID})
   --impersonate-sa SA_EMAIL     Service account to impersonate
   -y, --yes, --headless         Run in non-interactive/headless mode
   -h, --help                    Display this help message and exit
@@ -78,49 +89,51 @@ Examples:
   ./deploy_views.sh
 
   # Deploy to specific project headlessly:
-  ./deploy_views.sh -p my-ge-project -d ge_app_agy_telemetry -y
+  ./deploy_views.sh -p my-ge-project -d ge_app_agy_telemetry --raw-dataset-id ge_app_agy_raw -y
 HELP_EOF
   exit 0
 }
 
-# Parse YAML config
+# Parse scalar keys from a YAML config file (same format as deploy.sh).
+# The BigQuery project is destination_project_id if set, else project_id.
 load_config_file() {
   local file="$1"
-  if [[ ! -f "$file" ]]; then
-    return
-  fi
+  [[ -f "$file" ]] || return 0
   log_info "Loading configuration from: ${file}"
 
-  local parsed_project
-  local parsed_dataset
-  parsed_project=$(python3 -c "
-import sys, re
-try:
-    with open('${file}', 'r') as f:
-        for line in f:
-            m = re.match(r'^(project_id|destination_project_id)\s*:\s*[\"'\']?([^\"'\'#\s]+)', line.strip())
-            if m:
-                print(m.group(2))
-                break
-except Exception:
-    pass
-" 2>/dev/null || true)
+  local parsed key val cfg_project="" cfg_dest=""
+  parsed=$(python3 - "$file" <<'PY'
+import re, sys
 
-  parsed_dataset=$(python3 -c "
-import sys, re
-try:
-    with open('${file}', 'r') as f:
-        for line in f:
-            m = re.match(r'^dataset_id\s*:\s*[\"'\']?([^\"'\'#\s]+)', line.strip())
-            if m:
-                print(m.group(1))
-                break
-except Exception:
-    pass
-" 2>/dev/null || true)
+def parse_val(v):
+    v = v.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        return v[1:-1]
+    return v
 
-  [[ -z "$PROJECT_ID" && -n "$parsed_project" ]] && PROJECT_ID="$parsed_project"
-  [[ -z "$DATASET_ID" && -n "$parsed_dataset" ]] && DATASET_ID="$parsed_dataset"
+with open(sys.argv[1]) as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        m = re.match(r'^([A-Za-z0-9_-]+)\s*:\s*(.*)$', line)
+        if m:
+            val = parse_val(m.group(2).split(' #', 1)[0])
+            if val and not val.startswith(('[', '{')):
+                print(f'{m.group(1)}={val}')
+PY
+)
+  while IFS='=' read -r key val; do
+    case "$key" in
+      project_id) cfg_project="$val" ;;
+      destination_project_id) cfg_dest="$val" ;;
+      dataset_id) [[ -z "$DATASET_ID" ]] && DATASET_ID="$val" ;;
+      raw_dataset_id) [[ -z "$RAW_DATASET_ID" ]] && RAW_DATASET_ID="$val" ;;
+      deployer_service_account) [[ -z "$DEPLOYER_SERVICE_ACCOUNT" ]] && DEPLOYER_SERVICE_ACCOUNT="$val" ;;
+    esac
+  done <<< "$parsed"
+  [[ -z "$PROJECT_ID" ]] && PROJECT_ID="${cfg_dest:-$cfg_project}"
+  return 0
 }
 
 # ------------------------------------------------------------------------------
@@ -152,6 +165,14 @@ while [[ $# -gt 0 ]]; do
       DATASET_ID="${1#*=}"
       shift
       ;;
+    --raw-dataset-id)
+      RAW_DATASET_ID="$2"
+      shift 2
+      ;;
+    --raw-dataset-id=*)
+      RAW_DATASET_ID="${1#*=}"
+      shift
+      ;;
     --impersonate-sa)
       DEPLOYER_SERVICE_ACCOUNT="$2"
       shift 2
@@ -174,30 +195,34 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Check configs
+# Config: --config FILE, else ./config.yaml, else ge-app-telemetry/config.yaml
 if [[ -n "$CONFIG_FILE" ]]; then
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    log_error "Config file not found: ${CONFIG_FILE}"
+    exit 1
+  fi
   load_config_file "$CONFIG_FILE"
 elif [[ -f "config.yaml" ]]; then
   load_config_file "config.yaml"
 elif [[ -f "$DEFAULT_CONFIG_FILE" ]]; then
   load_config_file "$DEFAULT_CONFIG_FILE"
-elif [[ -f "../direct-log-sink-to-bq/config.example.yaml" ]]; then
-  load_config_file "../direct-log-sink-to-bq/config.example.yaml"
 fi
 
 DATASET_ID="${DATASET_ID:-$DEFAULT_DATASET_ID}"
+RAW_DATASET_ID="${RAW_DATASET_ID:-$DEFAULT_RAW_DATASET_ID}"
 
+# Impersonation via env var: applies to every gcloud and bq call (bq has no flag for it).
 IMPERSONATE_FLAG=""
 if [[ -n "$DEPLOYER_SERVICE_ACCOUNT" ]]; then
-  IMPERSONATE_FLAG="--impersonate-service-account=${DEPLOYER_SERVICE_ACCOUNT}"
-  log_info "Configured Service Account impersonation: ${DEPLOYER_SERVICE_ACCOUNT}"
+  export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="${DEPLOYER_SERVICE_ACCOUNT}"
+  log_info "Impersonating service account: ${DEPLOYER_SERVICE_ACCOUNT}"
 fi
 
 print_header
 
 log_info "Executing pre-flight checks..."
 
-for bin in gcloud bq; do
+for bin in gcloud bq python3; do
   if ! command -v "$bin" &>/dev/null; then
     log_error "Missing required CLI tool: ${bin}."
     exit 1
@@ -222,24 +247,37 @@ if [[ -z "$PROJECT_ID" ]]; then
 fi
 
 log_info "Target Project : ${PROJECT_ID}"
-log_info "Target Dataset : ${DATASET_ID}"
+log_info "Views Dataset  : ${DATASET_ID}"
+log_info "RAW Dataset    : ${RAW_DATASET_ID}"
 
-# Verify dataset exists
-if ! bq show ${IMPERSONATE_FLAG} "${PROJECT_ID}:${DATASET_ID}" &>/dev/null; then
-  log_error "BigQuery dataset ${PROJECT_ID}:${DATASET_ID} does not exist."
-  log_error "Please deploy the dataset first using deploy.sh in direct-log-sink-to-bq/."
-  exit 1
-fi
-log_success "BigQuery dataset verified: ${PROJECT_ID}:${DATASET_ID}"
+# Verify datasets exist (distinguish "not found" from auth/API errors)
+for ds in "${DATASET_ID}" "${RAW_DATASET_ID}"; do
+  if ! ds_out=$(bq show ${IMPERSONATE_FLAG} "${PROJECT_ID}:${ds}" 2>&1); then
+    if grep -q "Not found" <<< "${ds_out}"; then
+      log_error "BigQuery dataset ${PROJECT_ID}:${ds} does not exist."
+      log_error "Please deploy the datasets first using ../deploy.sh."
+    else
+      log_error "Could not check dataset ${PROJECT_ID}:${ds}: ${ds_out}"
+      log_error "Check your gcloud credentials ('gcloud auth login') and permissions."
+    fi
+    exit 1
+  fi
+done
+log_success "BigQuery datasets verified: ${DATASET_ID}, ${RAW_DATASET_ID}"
 
 VIEW_FILES=(
+  "00_v_ge_app_agy_user_summary.sql"
   "01_v_ge_app_agy_adoption.sql"
   "02_v_ge_app_agy_trust_quality.sql"
   "03_v_ge_app_agy_token_economics.sql"
+  "04_v_ge_app_agy_model_summary.sql"
+  "05_v_ge_app_agy_daily_sessions.sql"
+  "06_v_ge_app_agy_code_citations.sql"
 )
+VIEW_NAMES=()
 
 echo "------------------------------------------------------------------------------"
-echo -e "${BOLD}Deploying Views to ${PROJECT_ID}:${DATASET_ID}:${NC}"
+echo -e "${BOLD}Deploying Views to ${PROJECT_ID}:${DATASET_ID} (reading ${RAW_DATASET_ID}):${NC}"
 for vf in "${VIEW_FILES[@]}"; do
   echo "  - ${vf}"
 done
@@ -268,21 +306,58 @@ for vf in "${VIEW_FILES[@]}"; do
   RENDERED_SQL=$(sed \
     -e "s/{{PROJECT_ID}}/${PROJECT_ID}/g" \
     -e "s/{{DATASET_ID}}/${DATASET_ID}/g" \
+    -e "s/{{RAW_DATASET_ID}}/${RAW_DATASET_ID}/g" \
     "$SQL_PATH")
 
   echo "$RENDERED_SQL" | bq query \
+    --project_id="${PROJECT_ID}" \
     --use_legacy_sql=false \
     ${IMPERSONATE_FLAG} >/dev/null
 
+  view_name="$(basename "${vf}" .sql)"
+  VIEW_NAMES+=("${view_name#[0-9][0-9]_}")
   log_success "Successfully deployed ${vf}!"
 done
+
+# ------------------------------------------------------------------------------
+# Authorize the views on the RAW dataset (dataset access entries of type "view")
+# ------------------------------------------------------------------------------
+log_info "Authorizing views on ${RAW_DATASET_ID}..."
+TMP_RAW_ACL=$(mktemp)
+bq show ${IMPERSONATE_FLAG} --format=prettyjson "${PROJECT_ID}:${RAW_DATASET_ID}" > "${TMP_RAW_ACL}"
+AUTH_STATUS=$(python3 - "${TMP_RAW_ACL}" "${PROJECT_ID}" "${DATASET_ID}" "${VIEW_NAMES[@]}" <<'PY'
+import json, sys
+path, project, dataset, *views = sys.argv[1:]
+data = json.load(open(path))
+access = data.setdefault('access', [])
+existing = {(a['view']['projectId'], a['view']['datasetId'], a['view']['tableId'])
+            for a in access if 'view' in a}
+added = 0
+for v in views:
+    key = (project, dataset, v)
+    if key not in existing:
+        access.append({'view': {'projectId': project, 'datasetId': dataset, 'tableId': v}})
+        added += 1
+if added:
+    json.dump(data, open(path, 'w'), indent=2)
+print(added)
+PY
+)
+if [[ "${AUTH_STATUS}" != "0" ]]; then
+  bq update ${IMPERSONATE_FLAG} --source "${TMP_RAW_ACL}" "${PROJECT_ID}:${RAW_DATASET_ID}" > /dev/null
+  log_success "Authorized ${AUTH_STATUS} view(s) on ${RAW_DATASET_ID}."
+else
+  log_info "All views already authorized on ${RAW_DATASET_ID}."
+fi
+rm -f "${TMP_RAW_ACL}"
 
 echo ""
 echo -e "${GREEN}${BOLD}==============================================================================${NC}"
 echo -e "${GREEN}${BOLD} All Antigravity Analytical Views Deployed Successfully! 🚀${NC}"
 echo -e "${GREEN}${BOLD}==============================================================================${NC}"
-echo "  1. ${PROJECT_ID}.${DATASET_ID}.v_ge_app_agy_adoption"
-echo "  2. ${PROJECT_ID}.${DATASET_ID}.v_ge_app_agy_trust_quality"
-echo "  3. ${PROJECT_ID}.${DATASET_ID}.v_ge_app_agy_token_economics"
+for v in "${VIEW_NAMES[@]}"; do
+  echo "  - ${PROJECT_ID}.${DATASET_ID}.${v}"
+done
+echo "  (authorized views over ${PROJECT_ID}.${RAW_DATASET_ID}; no prompt text)"
 echo "=============================================================================="
 echo ""

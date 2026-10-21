@@ -1,0 +1,31 @@
+[
+  {"name": "timestamp", "type": "TIMESTAMP"},
+  {"name": "receiveTimestamp", "type": "TIMESTAMP"},
+  {"name": "insertId", "type": "STRING"},
+  {"name": "logName", "type": "STRING"},
+  {"name": "severity", "type": "STRING"},
+  {"name": "resource", "type": "RECORD", "fields": [
+    {"name": "type", "type": "STRING"},
+    {"name": "labels", "type": "RECORD", "fields": [
+      {"name": "location", "type": "STRING"},
+      {"name": "resource_container", "type": "STRING"}
+    ]}
+  ]},
+  {"name": "labels", "type": "RECORD", "fields": [
+    {"name": "user_id", "type": "STRING"},
+    {"name": "model", "type": "STRING"},
+    {"name": "client_name", "type": "STRING"},
+    {"name": "client_version", "type": "STRING"},
+    {"name": "trajectory_id", "type": "STRING"},
+    {"name": "request_id", "type": "STRING"},
+    {"name": "model_provider", "type": "STRING"}
+  ]},
+  {"name": "jsonpayload_v1_clienttelemetrylog", "type": "RECORD", "fields": [
+    {"name": "_type", "type": "STRING"},
+    {"name": "eventtype", "type": "STRING"},
+    {"name": "metadata", "type": "RECORD", "fields": [
+      {"name": "interactiontype", "type": "STRING"},
+      {"name": "interactionoutcome", "type": "STRING"}
+    ]}
+  ]}
+]

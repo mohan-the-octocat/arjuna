@@ -3,2715 +3,532 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Google Antigravity · Telemetry &amp; Observability</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <title>Google Antigravity - Developer Telemetry</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --bg-main: #F8FAFC;
-      --bg-card: #FFFFFF;
-      --text-main: #0F172A;
-      --text-muted: #64748B;
-      --border-color: #E2E8F0;
-      --blue-primary: #1A73E8;
-      --blue-tint: #F0F4FE;
-      --blue-border: #D2E3FC;
-      --green-primary: #1E8E3E;
-      --green-tint: #E6F4EA;
-      --green-border: #CEEAD6;
-      --red-primary: #D93025;
-      --red-tint: #FDF2F2;
-      --red-border: #FAD2CF;
-      --purple-primary: #8430CE;
-      --purple-tint: #F3E8FD;
-      --purple-border: #E9D2FD;
-      --amber-primary: #D97706;
-      --amber-tint: #FEF3C7;
-      --amber-border: #FCD34D;
-      --navy-banner: #1E293B;
-      --card-radius: 12px;
+      --bg-main: #F8FAFC; --bg-card: #FFFFFF; --text-main: #0F172A; --text-muted: #64748B;
+      --border-color: #E2E8F0; --blue-primary: #1A73E8; --blue-tint: #F0F4FE; --blue-border: #D2E3FC;
+      --green-primary: #1E8E3E; --green-tint: #E6F4EA; --red-primary: #D93025; --red-tint: #FDF2F2;
+      --purple-primary: #8430CE; --amber-primary: #E37400; --card-radius: 12px;
       --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
     }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background-color: var(--bg-main);
-      color: var(--text-main);
-      line-height: 1.5;
-      padding: 24px 36px;
-    }
-
-    .container {
-      max-width: 1440px;
-      margin: 0 auto;
-    }
-
-    /* Top Bar */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 20px;
-      border-bottom: 1px solid var(--border-color);
-      padding-bottom: 18px;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    .header-titles h1 {
-      font-size: 24px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: var(--text-main);
-      margin-bottom: 4px;
-    }
-
-    .header-meta {
-      font-size: 13px;
-      color: var(--text-muted);
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .meta-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--blue-tint);
-      color: var(--blue-primary);
-      padding: 3px 10px;
-      border-radius: 20px;
-      font-weight: 600;
-      font-size: 12px;
-      border: 1px solid var(--blue-border);
-    }
-
-    .meta-badge::before {
-      content: "";
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--green-primary);
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .filter-select {
-      background: #FFFFFF;
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      box-shadow: var(--shadow-sm);
-      cursor: pointer;
-    }
-
-    .filter-select:disabled {
-      background: #F1F5F9;
-      color: var(--text-muted);
-      cursor: not-allowed;
-      opacity: 0.7;
-    }
-
-    .btn-refresh {
-      background: #FFFFFF;
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.15s ease;
-      box-shadow: var(--shadow-sm);
-    }
-
-    .btn-refresh:hover {
-      background: #F1F5F9;
-      border-color: #CBD5E1;
-    }
-
-    .btn-refresh:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    /* Tab Navigation */
-    .tab-bar {
-      display: flex;
-      gap: 8px;
-      border-bottom: 2px solid var(--border-color);
-      margin-bottom: 24px;
-      overflow-x: auto;
-      padding-bottom: 0;
-    }
-
-    .tab-btn {
-      padding: 10px 16px;
-      background: none;
-      border: none;
-      border-bottom: 3px solid transparent;
-      margin-bottom: -2px;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.15s ease;
-      white-space: nowrap;
-    }
-
-    .tab-btn:hover {
-      color: var(--text-main);
-    }
-
-    .tab-btn.active {
-      color: var(--blue-primary);
-      border-bottom-color: var(--blue-primary);
-    }
-
-    .tab-restricted-badge {
-      font-size: 11px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 10px;
-      background: var(--amber-tint);
-      color: var(--amber-primary);
-      border: 1px solid var(--amber-border);
-    }
-
-    .org-banner-note {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-muted);
-      background: #F1F5F9;
-      border: 1px solid var(--border-color);
-      padding: 4px 10px;
-      border-radius: 6px;
-      margin-bottom: 16px;
-    }
-
-    .filter-banner {
-      display: none;
-      background: var(--blue-tint);
-      border: 1px solid var(--blue-border);
-      color: var(--blue-primary);
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      margin-bottom: 20px;
-    }
-
-    .filter-banner a { color: var(--blue-primary); font-weight: 600; cursor: pointer; margin-left: 8px; }
-
-    /* Restricted Security Banner */
-    .restricted-banner {
-      background: var(--amber-tint);
-      border: 1px solid var(--amber-border);
-      color: #78350F;
-      padding: 14px 18px;
-      border-radius: var(--card-radius);
-      margin-bottom: 24px;
-      display: flex;
-      gap: 14px;
-      align-items: flex-start;
-      box-shadow: var(--shadow-sm);
-    }
-
-    .restricted-banner-icon {
-      font-size: 20px;
-      line-height: 1;
-    }
-
-    .restricted-banner-text strong {
-      display: block;
-      font-size: 14px;
-      font-weight: 700;
-      margin-bottom: 2px;
-      color: #92400E;
-    }
-
-    .restricted-banner-text p {
-      font-size: 12.5px;
-      color: #B45309;
-      margin: 0;
-    }
-
-    /* Tab Panes */
-    .tab-pane {
-      display: none;
-    }
-
-    .tab-pane.active {
-      display: block;
-    }
-
-    /* Badges & Microcopy */
-    .badge-new {
-      display: inline-block;
-      padding: 2px 7px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 700;
-      background: var(--blue-tint);
-      color: var(--blue-primary);
-      border: 1px solid var(--blue-border);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .badge-built {
-      display: inline-block;
-      padding: 2px 7px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 700;
-      background: #F1F5F9;
-      color: #64748B;
-      border: 1px solid #CBD5E1;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .status-pill {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .status-pass, .status-ok { background: var(--green-tint); color: var(--green-primary); border: 1px solid var(--green-border); }
-    .status-fail, .status-over { background: var(--red-tint); color: var(--red-primary); border: 1px solid var(--red-border); }
-    .status-warn { background: var(--amber-tint); color: var(--amber-primary); border: 1px solid var(--amber-border); }
-    .status-neutral { background: #F1F5F9; color: var(--text-muted); border: 1px solid #CBD5E1; }
-
-    .admin-question {
-      font-size: 12px;
-      font-style: italic;
-      color: var(--text-muted);
-      margin-top: 3px;
-      margin-bottom: 12px;
-    }
-
-    .data-footnote {
-      margin-top: 16px;
-      padding-top: 10px;
-      border-top: 1px solid var(--border-color);
-      font-size: 11.5px;
-      color: var(--text-muted);
-    }
-
-    .empty-state {
-      padding: 28px 16px;
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 13px;
-      background: #F8FAFC;
-      border-radius: 8px;
-      border: 1px dashed var(--border-color);
-      margin: 12px 0;
-    }
-
-    /* Headline KPIs Row on Overview */
-    .headline-row {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-
-    @media (max-width: 1024px) {
-      .headline-row { grid-template-columns: repeat(2, 1fr); }
-    }
-
-    .headline-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-      padding: 16px 18px;
-      box-shadow: var(--shadow-sm);
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: flex;
-      flex-col;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-
-    .headline-card:hover {
-      border-color: var(--blue-primary);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(26,115,232,0.12);
-    }
-
-    .headline-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .headline-stat {
-      font-size: 26px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      margin: 8px 0 4px 0;
-      color: var(--text-main);
-    }
-
-    .headline-sub {
-      font-size: 11.5px;
-      color: var(--text-muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .headline-sub span.link-arrow {
-      color: var(--blue-primary);
-      font-weight: 600;
-    }
-
-    /* Alerts Card */
-    .alerts-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-      padding: 18px 22px;
-      box-shadow: var(--shadow-sm);
-      margin-bottom: 28px;
-    }
-
-    .alerts-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 14px;
-    }
-
-    .alerts-header-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .alert-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--red-primary);
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.15); }
-      100% { opacity: 1; transform: scale(1); }
-    }
-
-    .alerts-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-    }
-
-    @media (max-width: 768px) {
-      .alerts-grid { grid-template-columns: 1fr; }
-    }
-
-    .alert-item {
-      border-radius: 8px;
-      padding: 12px 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      border: 1px solid var(--border-color);
-    }
-
-    .alert-item.severity-red {
-      background: var(--red-tint);
-      border-color: var(--red-border);
-    }
-
-    .alert-item.severity-amber {
-      background: var(--amber-tint);
-      border-color: var(--amber-border);
-    }
-
-    .alert-content {
-      font-size: 12.5px;
-    }
-
-    .alert-meta {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-
-    .alert-theme-badge {
-      font-size: 10.5px;
-      font-weight: 700;
-      text-transform: uppercase;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: rgba(0,0,0,0.06);
-    }
-
-    .alert-btn {
-      background: #FFFFFF;
-      border: 1px solid var(--border-color);
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      color: var(--text-main);
-    }
-
-    .alert-btn:hover {
-      background: var(--blue-primary);
-      color: #FFFFFF;
-      border-color: var(--blue-primary);
-    }
-
-    /* Standard KPI Row */
-    .kpi-row {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      margin-bottom: 28px;
-    }
-
-    .kpi-row-4 {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-
-    @media (max-width: 900px) {
-      .kpi-row, .kpi-row-4 { grid-template-columns: 1fr; }
-    }
-
-    .kpi-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-      padding: 20px 22px;
-      box-shadow: var(--shadow-sm);
-      position: relative;
-    }
-
-    .kpi-card.adoption { border-top: 4px solid var(--blue-primary); }
-    .kpi-card.quality { border-top: 4px solid var(--green-primary); }
-    .kpi-card.finops { border-top: 4px solid var(--purple-primary); }
-
-    .kpi-card-header {
-      font-size: 12.5px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--text-muted);
-      margin-bottom: 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .kpi-main-stat {
-      font-size: 32px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      line-height: 1.1;
-      margin-bottom: 6px;
-    }
-
-    .kpi-metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-      margin-top: 14px;
-      padding-top: 12px;
-      border-top: 1px solid var(--border-color);
-    }
-
-    .sub-metric-label {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-bottom: 2px;
-    }
-
-    .sub-metric-val {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text-main);
-    }
-
-    /* Grids & Cards */
-    .grid-2col {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
-      margin-bottom: 28px;
-    }
-
-    @media (max-width: 900px) {
-      .grid-2col { grid-template-columns: 1fr; }
-    }
-
-    .chart-card, .table-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-      padding: 22px 24px;
-      box-shadow: var(--shadow-sm);
-      margin-bottom: 24px;
-    }
-
-    .chart-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: 8px;
-      gap: 8px;
-    }
-
-    .chart-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-main);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .canvas-container {
-      position: relative;
-      height: 280px;
-      width: 100%;
-    }
-
-    .table-container {
-      overflow-x: auto;
-      margin-top: 14px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      text-align: left;
-    }
-
-    th {
-      background: #F8FAFC;
-      color: var(--text-muted);
-      font-weight: 600;
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    td {
-      padding: 11px 14px;
-      border-bottom: 1px solid #F1F5F9;
-      color: var(--text-main);
-      vertical-align: middle;
-    }
-
-    tr:hover td {
-      background-color: #F8FAFC;
-    }
-
-    #user-table tbody tr { cursor: pointer; }
-    #user-table tbody tr.selected td { background-color: var(--blue-tint); }
-
-    .share-bar { height: 6px; background: var(--purple-primary); border-radius: 3px; }
-    .share-cell { min-width: 110px; }
-    .muted { color: var(--text-muted); font-size: 12px; }
-
-    /* Budget Progress Bar */
-    .budget-bar-container {
-      width: 100%;
-      min-width: 160px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .budget-bar-bg {
-      flex: 1;
-      height: 8px;
-      background: #E2E8F0;
-      border-radius: 4px;
-      overflow: hidden;
-    }
-
-    .budget-bar-fill {
-      height: 100%;
-      border-radius: 4px;
-      transition: width 0.3s ease;
-    }
-
-    .budget-bar-fill.ok { background: var(--green-primary); }
-    .budget-bar-fill.warn { background: var(--amber-primary); }
-    .budget-bar-fill.over { background: var(--red-primary); }
-
-    /* Slash command tags */
-    .slash-pill {
-      font-family: monospace;
-      font-weight: 600;
-      font-size: 12px;
-      padding: 2px 7px;
-      border-radius: 4px;
-      background: var(--blue-tint);
-      color: var(--blue-primary);
-      border: 1px solid var(--blue-border);
-    }
-
-    /* Privacy facts grid */
-    .facts-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      margin-top: 14px;
-    }
-
-    @media (max-width: 768px) {
-      .facts-grid { grid-template-columns: 1fr; }
-    }
-
-    .fact-box {
-      padding: 12px 14px;
-      background: #F8FAFC;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-    }
-
-    .fact-label { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
-    .fact-val { font-size: 17px; font-weight: 700; color: var(--text-main); }
-
-    /* Bottom Banner */
-    .takeaway-banner {
-      background: var(--navy-banner);
-      color: #F8FAFC;
-      padding: 16px 20px;
-      border-radius: var(--card-radius);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-      margin-top: 24px;
-    }
-
-    .takeaway-text strong {
-      color: #FFFFFF;
-      font-weight: 600;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg-main); color: var(--text-main); line-height: 1.5; padding: 28px 40px; }
+    .container { max-width: 1440px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;
+      border-bottom: 1px solid var(--border-color); padding-bottom: 16px; margin-bottom: 16px; }
+    .header h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+    .header-meta { font-size: 13px; color: var(--text-muted); display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+    .badge { background: var(--blue-tint); color: var(--blue-primary); border: 1px solid var(--blue-border);
+      padding: 2px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    select, .btn { background: #FFF; border: 1px solid var(--border-color); color: var(--text-main); padding: 7px 12px;
+      border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow-sm); cursor: pointer; max-width: 260px; }
+    .btn:hover { background: #F1F5F9; } .btn:disabled { opacity: .6; cursor: not-allowed; }
+    .control-label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-color); margin-bottom: 20px; flex-wrap: wrap; }
+    .tab { padding: 10px 16px; font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer;
+      border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tab.active { color: var(--blue-primary); border-bottom-color: var(--blue-primary); }
+    .panel { display: none; } .panel.active { display: block; }
+    .section-bar { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 12px; flex-wrap: wrap; gap: 8px; }
+    .section-bar h2 { font-size: 16px; font-weight: 700; }
+    .seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-sm); }
+    .seg button { border: 0; background: #FFF; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; color: var(--text-muted); }
+    .seg button.on { background: var(--blue-tint); color: var(--blue-primary); }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .kpi { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius); padding: 14px 16px; box-shadow: var(--shadow-sm); }
+    .kpi .label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+    .kpi .value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-top: 2px; }
+    .kpi .sub { font-size: 11px; color: var(--text-muted); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 18px; }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    @media (max-width: 1100px) { .grid, .grid.three { grid-template-columns: 1fr; } body { padding: 16px; } }
+    .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius); padding: 16px; box-shadow: var(--shadow-sm); }
+    .card.wide { grid-column: 1 / -1; }
+    .card h3 { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+    .card .hint { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+    .chart-box { position: relative; height: 280px; }
+    .empty { color: var(--text-muted); font-size: 13px; padding: 40px 0; text-align: center; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border-color);
+      cursor: pointer; white-space: nowrap; user-select: none; }
+    th.num, td.num { text-align: right; }
+    td { padding: 8px 10px; border-bottom: 1px solid #F1F5F9; white-space: nowrap; }
+    tbody tr:hover { background: #F8FAFC; cursor: pointer; }
+    tbody tr.selected { background: var(--blue-tint); }
+    .table-wrap { overflow-x: auto; }
+    .note { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    .filter-banner { display: none; background: var(--blue-tint); border: 1px solid var(--blue-border); color: var(--blue-primary);
+      padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+    .filter-banner a { cursor: pointer; text-decoration: underline; margin-left: 8px; }
+    .error { background: var(--red-tint); color: var(--red-primary); border: 1px solid #F5C2C0; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; display: none; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Header -->
-    <header class="header">
-      <div class="header-titles">
-        <h1>Google Antigravity · Telemetry &amp; Observability</h1>
-        <div class="header-meta">
-          <span class="meta-badge" id="connection-status">Live Connected</span>
-          <span>Project: <strong id="meta-project">...</strong></span>
-          <span>Dataset: <strong id="meta-dataset">...</strong></span>
-          <span>Last Synced: <span id="meta-synced">...</span></span>
-        </div>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>Google Antigravity · Developer Telemetry</h1>
+      <div class="header-meta">
+        <span class="badge" id="meta-source">--</span>
+        <span>Last refreshed: <strong id="meta-synced">--</strong></span>
+        <span>Data through: <strong id="meta-through">--</strong> (UTC)</span>
       </div>
-      <div class="header-actions">
-        <select class="filter-select" id="project-filter" onchange="applyProjectFilter()" title="Filter project-dimension panels by GCP Project">
-          <option value="">All projects</option>
-        </select>
-        <select class="filter-select" id="user-filter" onchange="applyFilter()" title="Filter metrics by user">
-          <option value="">All users</option>
-        </select>
-        <button class="btn-refresh" id="refresh-btn" onclick="triggerRefresh()">
-          <span>↻</span> Refresh from BigQuery
-        </button>
-      </div>
-    </header>
-
-    <!-- Navigation Tabs -->
-    <nav class="tab-bar" role="tablist">
-      <button type="button" class="tab-btn active" id="tab-btn-overview" onclick="navigateToTab('overview')">Overview</button>
-      <button type="button" class="tab-btn" id="tab-btn-adoption" onclick="navigateToTab('adoption')">Adoption &amp; Enablement</button>
-      <button type="button" class="tab-btn" id="tab-btn-value" onclick="navigateToTab('value')">Value &amp; Quality</button>
-      <button type="button" class="tab-btn" id="tab-btn-cost" onclick="navigateToTab('cost')">Cost &amp; FinOps</button>
-      <button type="button" class="tab-btn" id="tab-btn-security" onclick="navigateToTab('security')">
-        Security &amp; Compliance
-        <span class="tab-restricted-badge">Restricted</span>
-      </button>
-      <button type="button" class="tab-btn" id="tab-btn-fleet" onclick="navigateToTab('fleet')">Fleet &amp; Models</button>
-    </nav>
-
-    <!-- User Filter Active Banner -->
-    <div class="filter-banner" id="filter-banner">
-      Showing metrics for <strong id="filter-banner-user"></strong>
-      <a onclick="selectUser('')">× Show all users</a>
     </div>
-
-    <!-- Org Level Note on Theme Tabs -->
-    <div class="org-banner-note" id="org-view-note" style="display: none;">
-      <span>ℹ️</span> Org-level view: theme tabs display organization-wide telemetry
+    <div class="controls">
+      <span class="control-label">Range</span>
+      <select id="f-range" title="Daily charts: the last N calendar days in UTC, including today">
+        <option value="7">Last 7 days (UTC dates)</option>
+        <option value="30" selected>Last 30 days (UTC dates)</option>
+        <option value="90">Last 90 days (UTC dates)</option>
+      </select>
+      <select id="f-user" title="Filter by user"><option value="">All users</option></select>
+      <select id="f-client" title="Filter by client"><option value="">All clients</option></select>
+      <select id="f-model" title="Filter by model"><option value="">All models</option></select>
+      <button class="btn" id="btn-refresh" title="Re-query BigQuery views">↻ Refresh</button>
     </div>
-
-    <!-- =================================================================== -->
-    <!-- TAB 1: OVERVIEW -->
-    <!-- =================================================================== -->
-    <section id="tab-pane-overview" class="tab-pane active">
-      <!-- 5 Headline KPI Cards -->
-      <div class="headline-row">
-        <div class="headline-card" onclick="navigateToTab('adoption')">
-          <div class="headline-title">
-            <span>Weekly Active Users</span>
-            <span class="status-pill status-ok" id="hl-wau-prev">--</span>
-          </div>
-          <div class="headline-stat" id="hl-wau">--</div>
-          <div class="headline-sub">
-            <span>Target: 1,000 WAU</span>
-            <span class="link-arrow">Adoption &rarr;</span>
-          </div>
-        </div>
-
-        <div class="headline-card" onclick="navigateToTab('value')">
-          <div class="headline-title">
-            <span>Cost / Resolved Task</span>
-            <span class="status-pill status-ok" id="hl-cost-res-prev">--</span>
-          </div>
-          <div class="headline-stat" id="hl-cost-res">$--</div>
-          <div class="headline-sub">
-            <span>est. (list rate)</span>
-            <span class="link-arrow">Value &rarr;</span>
-          </div>
-        </div>
-
-        <div class="headline-card" onclick="navigateToTab('value')">
-          <div class="headline-title">
-            <span>Rework Rate</span>
-            <span class="status-pill status-ok" id="hl-rework-prev">--</span>
-          </div>
-          <div class="headline-stat" id="hl-rework">--%</div>
-          <div class="headline-sub">
-            <span>Modified + Rejected</span>
-            <span class="link-arrow">Quality &rarr;</span>
-          </div>
-        </div>
-
-        <div class="headline-card" onclick="navigateToTab('security')">
-          <div class="headline-title">
-            <span>Privacy Checks</span>
-            <span class="status-pill status-warn" id="hl-privacy-status">--</span>
-          </div>
-          <div class="headline-stat" id="hl-privacy">--/--</div>
-          <div class="headline-sub">
-            <span>Passing gates</span>
-            <span class="link-arrow">Security &rarr;</span>
-          </div>
-        </div>
-
-        <div class="headline-card" onclick="navigateToTab('fleet')">
-          <div class="headline-title">
-            <span>Current Version Fleet</span>
-            <span class="status-pill status-ok" id="hl-fleet-ver">--</span>
-          </div>
-          <div class="headline-stat" id="hl-fleet-pct">--%</div>
-          <div class="headline-sub">
-            <span>Target: &gt;80%</span>
-            <span class="link-arrow">Fleet &rarr;</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Alerts Strip -->
-      <div class="alerts-card">
-        <div class="alerts-header">
-          <div class="alerts-header-left">
-            <div class="alert-dot"></div>
-            <h2 style="font-size: 15px; font-weight: 700;">Alerts</h2>
-            <span class="status-pill status-fail" id="alert-badge-count">0 Action Required</span>
-          </div>
-          <span class="muted">Evaluated continuously against BigQuery views</span>
-        </div>
-        <div class="alerts-grid" id="alerts-grid">
-          <div class="empty-state" style="grid-column: 1 / -1;">No active alerts. Run fetch_data.sh to populate.</div>
-        </div>
-      </div>
-
-      <!-- Existing Adoption / Trust / FinOps KPI Row -->
-      <div class="kpi-row">
-        <!-- 1. Adoption -->
-        <div class="kpi-card adoption">
-          <div class="kpi-card-header">
-            <span>Developer Adoption</span>
-            <span class="badge-built">Built</span>
-          </div>
-          <div class="kpi-main-stat" id="kpi-dau">--</div>
-          <div class="sub-metric-label">Daily Active Developers</div>
-          <div class="kpi-metrics-grid">
-            <div>
-              <div class="sub-metric-label">Total Inferences</div>
-              <div class="sub-metric-val" id="kpi-inferences">--</div>
-            </div>
-            <div>
-              <div class="sub-metric-label">Total Trajectories</div>
-              <div class="sub-metric-val" id="kpi-trajectories">--</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. Trust & Quality -->
-        <div class="kpi-card quality">
-          <div class="kpi-card-header">
-            <span>Agent Trust &amp; Quality</span>
-            <span class="badge-built">Built</span>
-          </div>
-          <div class="kpi-main-stat" id="kpi-resolution-rate">--%</div>
-          <div class="sub-metric-label">Task Resolution Rate</div>
-          <div class="kpi-metrics-grid">
-            <div>
-              <div class="sub-metric-label">Permission Grant Rate</div>
-              <div class="sub-metric-val" id="kpi-perm-rate">--%</div>
-            </div>
-            <div>
-              <div class="sub-metric-label">Avg Inferences/Task</div>
-              <div class="sub-metric-val" id="kpi-inf-per-task">--</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 3. FinOps -->
-        <div class="kpi-card finops">
-          <div class="kpi-card-header">
-            <span>Token Economics &amp; FinOps</span>
-            <span class="badge-built">Built</span>
-          </div>
-          <div class="kpi-main-stat" id="kpi-cost">$--</div>
-          <div class="sub-metric-label">Est. List Cost (50% Disc: <span id="kpi-disc-cost">$--</span>)</div>
-          <div class="kpi-metrics-grid">
-            <div>
-              <div class="sub-metric-label">Total Tokens</div>
-              <div class="sub-metric-val" id="kpi-tokens">-- M</div>
-            </div>
-            <div>
-              <div class="sub-metric-label">Avg Tokens / Turn</div>
-              <div class="sub-metric-val" id="kpi-tokens-per-turn">-- K</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- User Insights Table -->
-      <section class="table-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">
-              User Insights
-              <span class="badge-built">Built</span>
-            </div>
-            <div class="admin-question">Per-developer rollup for the full period · click a row to filter the dashboard</div>
-          </div>
-        </div>
-        <div class="table-container">
-          <table id="user-table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Active Days</th>
-                <th>Trajectories</th>
-                <th>Inferences</th>
-                <th>Inf / Trajectory</th>
-                <th>Total Tokens</th>
-                <th>Token Share</th>
-                <th>Avg Tokens / Turn</th>
-                <th>Resolution Rate</th>
-                <th>Top Model</th>
-                <th>Last Active</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="11" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="data-footnote">Data: v_ge_app_agy_adoption, v_ge_app_agy_trust_quality, v_ge_app_agy_token_economics aggregated per user</div>
-      </section>
-
-      <!-- Bottom Domain Note Banner -->
-      <div class="takeaway-banner">
-        <div class="takeaway-text">
-          <strong>Domain Note:</strong> Interactive IDE/CLI developer usage is covered under flat-rate subscription seats ($10/$15 PUPM).
-          Telemetry cost estimates reflect equivalent pay-as-you-go Vertex AI token consumption at est. (list rate) with 50% Flash caching applied.
-        </div>
-      </div>
-    </section>
-
-    <!-- =================================================================== -->
-    <!-- TAB 2: ADOPTION & ENABLEMENT -->
-    <!-- =================================================================== -->
-    <section id="tab-pane-adoption" class="tab-pane">
-      <div class="kpi-row-4">
-        <div class="kpi-card adoption">
-          <div class="kpi-card-header"><span>Active Users</span><span class="badge-built">Built</span></div>
-          <div class="kpi-main-stat" id="adopt-kpi-dau">--</div>
-          <div class="sub-metric-label">Distinct developers in period</div>
-        </div>
-        <div class="kpi-card adoption">
-          <div class="kpi-card-header"><span>WAU</span><span class="badge-new">New</span></div>
-          <div class="kpi-main-stat" id="adopt-kpi-wau">--</div>
-          <div class="sub-metric-label">Distinct developers, last 7 days</div>
-        </div>
-        <div class="kpi-card adoption">
-          <div class="kpi-card-header"><span>Total Inferences</span><span class="badge-built">Built</span></div>
-          <div class="kpi-main-stat" id="adopt-kpi-inf">--</div>
-          <div class="sub-metric-label">LLM calls in period</div>
-        </div>
-        <div class="kpi-card adoption">
-          <div class="kpi-card-header"><span>Trajectories</span><span class="badge-built">Built</span></div>
-          <div class="kpi-main-stat" id="adopt-kpi-traj">--</div>
-          <div class="sub-metric-label">Multi-turn agent sessions</div>
-        </div>
-      </div>
-
-      <!-- Charts: Inferences & Trajectories -->
-      <div class="grid-2col">
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Inference Volume Over Time <span class="badge-built">Built</span></div>
-              <div class="admin-question">How consistently are developers engaging with Antigravity over the last month?</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-inferences"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_adoption.total_inferences by event_date</div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Active Trajectories Over Time <span class="badge-built">Built</span></div>
-              <div class="admin-question">How many multi-turn agent coding sessions are initiated daily?</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-trajectories"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_adoption.active_trajectories by event_date</div>
-        </div>
-      </div>
-
-      <!-- Customization Adoption & Surface Mix -->
-      <div class="grid-2col">
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Customization Adoption <span class="badge-new">New</span></div>
-              <div class="admin-question">Are developers adopting advanced customization features like skills, subagents, and commands?</div>
-            </div>
-          </div>
-          <div id="customization-content">
-            <div class="kpi-metrics-grid" style="margin-top:0; border-top:none; margin-bottom:14px;">
-              <div>
-                <div class="sub-metric-label">Skills Adoption</div>
-                <div class="sub-metric-val" id="cust-skills-pct">--%</div>
-              </div>
-              <div>
-                <div class="sub-metric-label">Subagents Adoption</div>
-                <div class="sub-metric-val" id="cust-subagents-pct">--%</div>
-              </div>
-              <div>
-                <div class="sub-metric-label">Slash Commands</div>
-                <div class="sub-metric-val" id="cust-slash-pct">--%</div>
-              </div>
-              <div>
-                <div class="sub-metric-label">Pre-Invocation Hooks</div>
-                <div class="sub-metric-val" id="cust-hooks-pct">--%</div>
-              </div>
-            </div>
-            <div class="canvas-container" style="height: 190px;">
-              <canvas id="chart-customization-weekly"></canvas>
-            </div>
-            <div style="margin-top: 14px;">
-              <div class="sub-metric-label" style="font-weight: 600; margin-bottom: 6px;">Top Slash Commands:</div>
-              <div id="top-slash-commands-list" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
-            </div>
-          </div>
-          <div class="data-footnote">Data: input.messages[].content wrapper formats, v_ge_app_agy_customization</div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Surface Mix Weekly (Hub / CLI / VS Code) <span class="badge-new">New</span></div>
-              <div class="admin-question">How is usage distributed across IDEs, CLI terminal, and web hub interfaces?</div>
-            </div>
-          </div>
-          <div id="surface-mix-content">
-            <div style="margin-bottom: 12px; font-size: 13px;">
-              Multi-surface users: <strong id="multi-surface-pct" style="color: var(--green-primary);">--%</strong> of WAU use &ge;2 client surfaces
-            </div>
-            <div class="canvas-container" style="height: 240px;">
-              <canvas id="chart-surface-mix"></canvas>
-            </div>
-          </div>
-          <div class="data-footnote">Data: client_telemetry.client_name, v_ge_app_agy_token_economics.client_name</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- =================================================================== -->
-    <!-- TAB 3: VALUE & QUALITY -->
-    <!-- =================================================================== -->
-    <section id="tab-pane-value" class="tab-pane">
-      <div class="kpi-row-4">
-        <div class="kpi-card quality">
-          <div class="kpi-card-header"><span>Task Resolution</span><span class="badge-built">Built</span></div>
-          <div class="kpi-main-stat" id="val-kpi-res">--%</div>
-          <div class="sub-metric-label">Trajectories reaching InferenceResolved</div>
-        </div>
-        <div class="kpi-card quality">
-          <div class="kpi-card-header"><span>Permission Grant</span><span class="badge-built">Built</span></div>
-          <div class="kpi-main-stat" id="val-kpi-perm">--%</div>
-          <div class="sub-metric-label">Tool execution approvals</div>
-        </div>
-        <div class="kpi-card quality">
-          <div class="kpi-card-header"><span>Proposal Rework Rate</span><span class="badge-new">New</span></div>
-          <div class="kpi-main-stat" id="val-kpi-rework" style="color: var(--amber-primary);">--%</div>
-          <div class="sub-metric-label">(Modified + Rejected) / total proposals</div>
-        </div>
-        <div class="kpi-card quality">
-          <div class="kpi-card-header"><span>Cost / Resolved Task</span><span class="badge-new">New</span></div>
-          <div class="kpi-main-stat" id="val-kpi-cost-task" style="color: var(--blue-primary);">$--</div>
-          <div class="sub-metric-label">est. (list rate) per resolved task</div>
-        </div>
-      </div>
-
-      <div class="grid-2col">
-        <!-- Developer Tool Approvals -->
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Developer Tool Approvals <span class="badge-built">Built</span></div>
-              <div class="admin-question">Are developers comfortable approving automated tool actions and terminal commands?</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-permissions"></canvas>
-          </div>
-          <div class="data-footnote">Data: client_telemetry.eventtype='PERMISSION_GRANT', decision</div>
-        </div>
-
-        <!-- Proposal Outcomes by Model -->
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Proposal Outcomes by Model <span class="badge-new">New</span></div>
-              <div class="admin-question">Which models generate the cleanest first-pass code proposals without developer friction?</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-proposal-outcomes"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_trust_quality.proposals_accepted, proposals_modified, proposals_rejected</div>
-        </div>
-      </div>
-
-      <div class="grid-2col">
-        <!-- Weekly Rework Rate Trend -->
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Rework Rate Weekly Trend <span class="badge-new">New</span></div>
-              <div class="admin-question">Is code churn and modification rate improving as models and prompts mature?</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-rework-trend"></canvas>
-          </div>
-          <div class="data-footnote">Data: (proposals_modified + proposals_rejected) / total_proposals by week</div>
-        </div>
-
-        <!-- Task Outcomes Summary Card -->
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Abandoned Spend vs Resolved Task ROI <span class="badge-new">New</span></div>
-              <div class="admin-question">How much token budget is burned on sessions that fail to resolve or are abandoned?</div>
-            </div>
-          </div>
-          <div id="abandoned-spend-content">
-            <div class="facts-grid" style="margin-top:0; margin-bottom:14px;">
-              <div class="fact-box">
-                <div class="fact-label">Resolved Tasks</div>
-                <div class="fact-val" id="val-resolved-count">--</div>
-              </div>
-              <div class="fact-box">
-                <div class="fact-label">Abandoned Sessions</div>
-                <div class="fact-val" id="val-abandoned-count" style="color: var(--amber-primary);">--</div>
-              </div>
-              <div class="fact-box">
-                <div class="fact-label">Abandoned Spend est. (list rate)</div>
-                <div class="fact-val" id="val-abandoned-cost" style="color: var(--red-primary);">$--</div>
-              </div>
-            </div>
-            <div class="canvas-container" style="height: 180px;">
-              <canvas id="chart-outcomes-donut"></canvas>
-            </div>
-          </div>
-          <div class="data-footnote">Data: trajectory_id, eventtype='InferenceResolved', idle &gt; 24h</div>
-        </div>
-      </div>
-
-      <!-- Cost per Resolved Task by Model & Tier Table -->
-      <section class="table-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">Cost per Resolved Task by Model &amp; Reasoning Tier <span class="badge-new">New</span></div>
-            <div class="admin-question">What is the unit cost and effectiveness per successful developer task across models?</div>
-          </div>
-        </div>
-        <div class="table-container">
-          <table id="table-outcomes-tier">
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>Experience / Reasoning Tier</th>
-                <th style="text-align: right;">Trajectories</th>
-                <th style="text-align: right;">Resolved Tasks</th>
-                <th style="text-align: right;">Resolution Rate</th>
-                <th style="text-align: right;">Est. Cost (list rate)</th>
-                <th style="text-align: right;">Cost / Resolved Task est. (list rate)</th>
-                <th style="text-align: right;">Abandoned Spend est. (list rate)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="8" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="data-footnote">Data: totaltokencount, client_telemetry.eventtype='InferenceResolved', rate card</div>
-      </section>
-    </section>
-
-    <!-- =================================================================== -->
-    <!-- TAB 4: COST & FINOPS -->
-    <!-- =================================================================== -->
-    <section id="tab-pane-cost" class="tab-pane">
-      <div class="kpi-row-4">
-        <div class="kpi-card finops">
-          <div class="kpi-card-header"><span>Total Tokens</span><span class="badge-built">Built</span></div>
-          <div class="kpi-main-stat" id="cost-kpi-tokens">-- M</div>
-          <div class="sub-metric-label">Prompt, cached &amp; output</div>
-        </div>
-        <div class="kpi-card finops">
-          <div class="kpi-card-header"><span>Est. Cost (list rate)</span><span class="badge-built">Built</span></div>
-          <div class="kpi-main-stat" id="cost-kpi-list">$--</div>
-          <div class="sub-metric-label">Model rate card est. (list rate)</div>
-        </div>
-        <div class="kpi-card finops">
-          <div class="kpi-card-header"><span>50% Flash Discount</span><span class="badge-built">Built</span></div>
-          <div class="kpi-main-stat" id="cost-kpi-disc">$--</div>
-          <div class="sub-metric-label">Discounted list rate estimate</div>
-        </div>
-        <div class="kpi-card finops">
-          <div class="kpi-card-header"><span>Background Overhead</span><span class="badge-new">New</span></div>
-          <div class="kpi-main-stat" id="cost-kpi-aux" style="color: var(--amber-primary);">--%</div>
-          <div class="sub-metric-label">Auxiliary calls (no trajectory_id)</div>
-        </div>
-      </div>
-
-      <!-- Project Showback Table -->
-      <section class="table-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">GCP Project Showback &amp; Budgets <span class="badge-new">New</span></div>
-            <div class="admin-question">Which GCP projects are driving the highest consumption and approaching budget caps?</div>
-          </div>
-        </div>
-        <div class="table-container">
-          <table id="table-project-showback">
-            <thead>
-              <tr>
-                <th>Project ID</th>
-                <th>Project Number</th>
-                <th style="text-align: right;">Users</th>
-                <th style="text-align: right;">Trajectories</th>
-                <th style="text-align: right;">Inferences</th>
-                <th style="text-align: right;">Tokens</th>
-                <th style="text-align: right;">Est. Cost (list rate)</th>
-                <th style="text-align: right;">Budget est. (list rate)</th>
-                <th style="width: 250px;">Budget Progress (50 / 80 / 100%)</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="10" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="data-footnote">Data: v_ge_app_agy_project_showback, admin_config.project_budgets_usd. Note: Set project_budgets_usd in admin_config.json to customize budget targets.</div>
-      </section>
-
-      <!-- Daily Tokens & Cost Charts -->
-      <div class="grid-2col">
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Daily Token Volume <span class="badge-built">Built</span></div>
-              <div class="admin-question">Total processed prompt and candidate tokens per day</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-tokens"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_token_economics.total_tokens by event_date</div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Daily Estimated Cost Attribution <span class="badge-built">Built</span></div>
-              <div class="admin-question">List price vs 50% Flash cached discount est. (list rate) (USD)</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-cost"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_token_economics.estimated_cost_usd_list</div>
-        </div>
-      </div>
-
-      <!-- Project Daily Spend & Background Overhead -->
-      <div class="grid-2col">
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Daily Estimated Cost by Project <span class="badge-new">New</span></div>
-              <div class="admin-question">How does daily spending distribute across GCP projects?</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-project-daily"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_project_showback.est_cost_usd by event_date</div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Background Call Overhead Weekly <span class="badge-new">New</span></div>
-              <div class="admin-question">What share of token volume is consumed by background/auxiliary tasks?</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-aux-weekly"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_aux_overhead (calls with labels.trajectory_id IS NULL)</div>
-        </div>
-      </div>
-
-      <!-- Auxiliary Overhead Table by Client Version -->
-      <section class="table-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">Auxiliary Call Overhead by Client Version <span class="badge-new">New</span></div>
-            <div class="admin-question">Does background call overhead regress between client releases?</div>
-          </div>
-        </div>
-        <div class="table-container">
-          <table id="table-aux-version">
-            <thead>
-              <tr>
-                <th>Client Name</th>
-                <th>Client Version</th>
-                <th style="text-align: right;">Total Calls</th>
-                <th style="text-align: right;">Aux Calls</th>
-                <th style="text-align: right;">Aux Call %</th>
-                <th style="text-align: right;">Total Tokens</th>
-                <th style="text-align: right;">Aux Tokens</th>
-                <th style="text-align: right;">Aux Token %</th>
-                <th>First Seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="9" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="data-footnote">Data: v_ge_app_agy_aux_overhead</div>
-      </section>
-
-      <!-- Automation vs Seat Spend -->
-      <div class="chart-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">Automation vs Seat-Included Token Spend <span class="badge-new">New</span></div>
-            <div class="admin-question">How is compute volume divided between interactive seat usage and uncapped automation?</div>
-          </div>
-        </div>
-        <div class="canvas-container">
-          <canvas id="chart-automation-seat"></canvas>
-        </div>
-        <div class="data-footnote">Data: v_ge_app_agy_token_economics.subscription_tier_type</div>
-      </div>
-
-      <!-- Rightsizing & Runaway Sessions Grids -->
-      <div class="grid-2col">
-        <div class="table-card" style="margin-bottom:0;">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Reasoning-Tier Right-Sizing <span class="badge-new">New</span></div>
-              <div class="admin-question">Are high-reasoning tiers being used effectively or wasted on short tasks?</div>
-            </div>
-          </div>
-          <div class="table-container">
-            <table id="table-rightsizing">
-              <thead>
-                <tr>
-                  <th>Project ID</th>
-                  <th>Experience</th>
-                  <th style="text-align: right;">Total Traj</th>
-                  <th style="text-align: right;">Short (&le;3)</th>
-                  <th style="text-align: right;">Short %</th>
-                  <th style="text-align: right;">Short Cost est. (list rate)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td colspan="6" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_trajectory_outcomes, admin_config.rightsizing_max_steps</div>
-        </div>
-
-        <div class="table-card" style="margin-bottom:0;">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Runaway Sessions <span class="badge-new">New</span></div>
-              <div class="admin-question">Are any agent sessions exceeding safety thresholds (&ge;100 steps) and burning excessive tokens?</div>
-            </div>
-          </div>
-          <div class="table-container">
-            <table id="table-runaway">
-              <thead>
-                <tr>
-                  <th>Trajectory ID</th>
-                  <th>Project</th>
-                  <th>User</th>
-                  <th style="text-align: right;">Steps</th>
-                  <th style="text-align: right;">Cost est. (list rate)</th>
-                  <th>Resolved</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td colspan="6" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_trajectory_outcomes, admin_config.runaway_min_steps</div>
-        </div>
-      </div>
-
-      <!-- Model & Tier Cost Attribution Table (Existing) -->
-      <section class="table-card" style="margin-top: 24px;">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">Model &amp; Tier Cost Attribution <span class="badge-built">Built</span></div>
-            <div class="admin-question">Per-model workload metrics and pricing classifications</div>
-          </div>
-        </div>
-        <div class="table-container">
-          <table id="attribution-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>User</th>
-                <th>Model</th>
-                <th>Inferences</th>
-                <th>Trajectories</th>
-                <th>Total Tokens</th>
-                <th>List Cost est. (list rate)</th>
-                <th>Discounted Cost est. (list rate)</th>
-                <th>Subscription Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="9" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="data-footnote" id="rate-card-footnote">Data: v_ge_app_agy_token_economics. Rate card sources: upstream blended default ($0.15/1M tokens).</div>
-      </section>
-    </section>
-
-    <!-- =================================================================== -->
-    <!-- TAB 5: SECURITY & COMPLIANCE -->
-    <!-- =================================================================== -->
-    <section id="tab-pane-security" class="tab-pane">
-      <!-- Restricted Banner -->
-      <div class="restricted-banner">
-        <div class="restricted-banner-icon">⚠️</div>
-        <div class="restricted-banner-text">
-          <strong>Restricted view — Central IT Admin Access Only</strong>
-          <p>This build has no access control. Serve it behind IAP or another auth proxy before sharing. Metrics are shown by project, not by individual.</p>
-        </div>
-      </div>
-
-      <!-- Privacy Posture Self-Check -->
-      <section class="table-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">Privacy Posture Self-Check <span class="badge-new">New</span></div>
-            <div class="admin-question">Is data retention and zero data retention (ZDR) policy being honored?</div>
-          </div>
-        </div>
-        <div class="table-container">
-          <table id="table-privacy-checks">
-            <thead>
-              <tr>
-                <th>Check</th>
-                <th>Status</th>
-                <th>Audit Evidence / Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="3" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="facts-grid" id="privacy-facts-grid">
-          <div class="fact-box">
-            <div class="fact-label">Total Requests</div>
-            <div class="fact-val" id="priv-req-total">--</div>
-          </div>
-          <div class="fact-box">
-            <div class="fact-label">Requests With Prompt Text</div>
-            <div class="fact-val" id="priv-req-prompts">--</div>
-          </div>
-          <div class="fact-box">
-            <div class="fact-label">Responses With Candidates</div>
-            <div class="fact-val" id="priv-resp-candidates">--</div>
-          </div>
-          <div class="fact-box">
-            <div class="fact-label">Oldest Request Timestamp</div>
-            <div class="fact-val" id="priv-oldest-ts" style="font-size: 14px;">--</div>
-          </div>
-          <div class="fact-box">
-            <div class="fact-label">Table Partition Expiration</div>
-            <div class="fact-val" id="priv-expiration">--</div>
-          </div>
-          <div class="fact-box">
-            <div class="fact-label">Distinct User Identities</div>
-            <div class="fact-val" id="priv-user-emails">--</div>
-          </div>
-        </div>
-        <div class="data-footnote">Data: v_ge_app_agy_privacy_posture, INFORMATION_SCHEMA.TABLE_OPTIONS</div>
-      </section>
-
-      <!-- Identity Hygiene -->
-      <section class="table-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">Identity Hygiene <span class="badge-new">New</span></div>
-            <div class="admin-question">Which email domains are accessing Antigravity and are any external?</div>
-          </div>
-        </div>
-        <div class="table-container">
-          <table id="table-identity-domains">
-            <thead>
-              <tr>
-                <th>Domain</th>
-                <th>Classification</th>
-                <th style="text-align: right;">Users</th>
-                <th style="text-align: right;">Projects</th>
-                <th style="text-align: right;">Inferences</th>
-                <th>First Seen</th>
-                <th>Last Seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="7" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="data-footnote">Data: v_ge_app_agy_identity_domains, admin_config.corporate_domains</div>
-      </section>
-
-      <!-- Approval Posture by Project -->
-      <section class="table-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">Approval Posture by Project <span class="badge-new">New</span></div>
-            <div class="admin-question">How quickly are tool execution permissions granted and are there rubber-stamping risks?</div>
-          </div>
-        </div>
-        <div class="table-container">
-          <table id="table-approval-posture">
-            <thead>
-              <tr>
-                <th>Project ID</th>
-                <th style="text-align: right;">Users</th>
-                <th style="text-align: right;">Grants Accepted</th>
-                <th style="text-align: right;">Grants Rejected</th>
-                <th style="text-align: right;">Reject Rate %</th>
-                <th style="text-align: right;">Fast Grants (&le;2s)</th>
-                <th style="text-align: right;">Fast Grant %</th>
-                <th style="text-align: right;">Median Decision (s)</th>
-                <th style="text-align: right;">Zero-Reject High-Vol Users</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="9" style="text-align: center; color: #94A3B8;">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="data-footnote">Data: v_ge_app_agy_approval_posture, client_telemetry PERMISSION_GRANT</div>
-      </section>
-
-      <!-- Audit Export Status -->
-      <div class="chart-card">
-        <div class="chart-header">
-          <div>
-            <div class="chart-title">Audit Export to GCS <span class="badge-new">New</span></div>
-            <div class="admin-question">Is scheduled export of prompts and decisions configured for SIEM or eDiscovery?</div>
-          </div>
-        </div>
-        <div id="audit-export-card-content" style="padding: 12px 0;">
-          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-            <span class="status-pill status-neutral" id="audit-export-status">Not Configured</span>
-            <span style="font-size: 13px;" id="audit-export-note">Scheduled export to GCS is not configured in this build.</span>
-          </div>
-          <p class="muted" style="font-size: 12px;">To enable scheduled exports to Google Cloud Storage for SIEM integration, configure audit_export in admin_config.json.</p>
-        </div>
-        <div class="data-footnote">Data: admin_config.audit_export</div>
-      </div>
-    </section>
-
-    <!-- =================================================================== -->
-    <!-- TAB 6: FLEET & MODELS -->
-    <!-- =================================================================== -->
-    <section id="tab-pane-fleet" class="tab-pane">
-      <div class="grid-2col">
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Model Usage Distribution <span class="badge-built">Built</span></div>
-              <div class="admin-question">Inferences by Gemini model family</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-models"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_adoption.model</div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-header">
-            <div>
-              <div class="chart-title">Client Version Distribution Weekly <span class="badge-new">New</span></div>
-              <div class="admin-question">How quickly is the developer fleet adopting new client releases?</div>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="chart-version-distribution"></canvas>
-          </div>
-          <div class="data-footnote">Data: v_ge_app_agy_adoption.client_version, weekly active users</div>
-        </div>
-      </div>
-    </section>
   </div>
 
-  <script>
-    let charts = {};
-    let rawData = null;
-    let currentTab = 'overview';
-    let selectedUser = '';
-    let selectedProject = '';
-
-    const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const shortUser = u => String(u || 'unknown').split('@')[0];
-    const num = v => parseInt(v, 10) || 0;
-    const flt = v => parseFloat(v) || 0;
-
-    // Destroy chart safely before recreation
-    function safeChart(canvasId, config) {
-      if (charts[canvasId]) {
-        charts[canvasId].destroy();
-        charts[canvasId] = null;
-      }
-      const el = document.getElementById(canvasId);
-      if (!el) return null;
-      const ctx = el.getContext('2d');
-      charts[canvasId] = new Chart(ctx, config);
-      return charts[canvasId];
-    }
-
-    // Navigation and Routing
-    function navigateToTab(tabId) {
-      const validTabs = ['overview', 'adoption', 'value', 'cost', 'security', 'fleet'];
-      const target = validTabs.includes(tabId) ? tabId : 'overview';
-      currentTab = target;
-      window.location.hash = target;
-      updateTabUI();
-    }
-
-    function handleHashChange() {
-      let hash = window.location.hash.replace('#', '').toLowerCase();
-      if (hash === 'usage') hash = 'adoption';
-      const validTabs = ['overview', 'adoption', 'value', 'cost', 'security', 'fleet'];
-      currentTab = validTabs.includes(hash) ? hash : 'overview';
-      updateTabUI();
-    }
-
-    function updateTabUI() {
-      // Toggle button active states
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.id === `tab-btn-${currentTab}`);
-      });
-
-      // Toggle tab panes
-      document.querySelectorAll('.tab-pane').forEach(pane => {
-        pane.classList.toggle('active', pane.id === `tab-pane-${currentTab}`);
-      });
-
-      // User filter & Org-level view note
-      const userSel = document.getElementById('user-filter');
-      const orgNote = document.getElementById('org-view-note');
-      if (currentTab === 'overview') {
-        userSel.disabled = false;
-        userSel.title = 'Filter all metrics by user';
-        orgNote.style.display = 'none';
-      } else {
-        userSel.disabled = true;
-        userSel.title = 'This tab shows all users (Org-level view)';
-        orgNote.style.display = 'inline-flex';
-      }
-
-      // Re-render current tab when displayed
-      if (rawData) {
-        renderCurrentTab();
-      }
-    }
-
-    async function loadData() {
-      try {
-        const res = await fetch('/api/data');
-        if (!res.ok) throw new Error('Failed to load telemetry data');
-        const data = await res.json();
-
-        // DEV switch: ?fixture=1 loads public/dev/admin_fixture.json into data.admin
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('fixture') === '1') {
-          try {
-            const fixRes = await fetch('/dev/admin_fixture.json');
-            if (fixRes.ok) {
-              data.admin = await fixRes.json();
-            }
-          } catch (err) {
-            // gracefully continue
-          }
-        }
-
-        setData(data);
-      } catch (err) {
-        document.getElementById('connection-status').innerText = 'Data Error';
-        document.getElementById('connection-status').style.color = '#D93025';
-      }
-    }
-
-    async function triggerRefresh() {
-      const btn = document.getElementById('refresh-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<span>⏳</span> Refreshing...';
-      try {
-        const res = await fetch('/api/refresh', { method: 'POST' });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          const details = String(body.details || '').split('\n')
-            .filter(l => l && !l.startsWith('Command failed')).slice(0, 4).join('\n');
-          throw new Error(details || body.error || `HTTP ${res.status}`);
-        }
-        const data = await res.json();
-        setData(data);
-      } catch (err) {
-        alert('Failed to refresh data: ' + err.message);
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<span>↻</span> Refresh from BigQuery';
-      }
-    }
-
-    function setData(data) {
-      rawData = data;
-
-      // Populate user dropdown
-      const users = [...new Set([
-        ...(data.user_summary || []), ...(data.adoption || []),
-        ...(data.trust_quality || []), ...(data.token_economics || [])
-      ].map(r => r.user_email).filter(Boolean))].sort();
-
-      const userSel = document.getElementById('user-filter');
-      const wantedUser = userSel.value || new URLSearchParams(location.search).get('user') || '';
-      userSel.innerHTML = `<option value="">All users (${users.length})</option>` +
-        users.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
-      userSel.value = users.includes(wantedUser) ? wantedUser : '';
-      selectedUser = userSel.value;
-
-      // Populate project dropdown
-      const projects = new Set();
-      if (data.admin && data.admin.cost && data.admin.cost.project_showback) {
-        data.admin.cost.project_showback.forEach(p => { if (p.project_id) projects.add(p.project_id); });
-      }
-      if (data.admin && data.admin.cost && data.admin.cost.project_daily) {
-        data.admin.cost.project_daily.forEach(p => { if (p.project_id) projects.add(p.project_id); });
-      }
-      const sortedProjects = [...projects].sort();
-      const projSel = document.getElementById('project-filter');
-      const wantedProj = projSel.value || new URLSearchParams(location.search).get('project') || '';
-      projSel.innerHTML = '<option value="">All projects</option>' +
-        sortedProjects.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
-      projSel.value = sortedProjects.includes(wantedProj) ? wantedProj : '';
-      selectedProject = projSel.value;
-
-      // Set Metadata header
-      if (data.metadata) {
-        document.getElementById('meta-project').innerText = data.metadata.project_id || '--';
-        document.getElementById('meta-dataset').innerText = data.metadata.dataset_id || '--';
-        document.getElementById('meta-synced').innerText = data.metadata.fetched_at ? new Date(data.metadata.fetched_at).toLocaleString() : '--';
-      }
-
-      applyFilter();
-    }
-
-    function selectUser(u) {
-      document.getElementById('user-filter').value = u;
-      applyFilter();
-    }
-
-    function applyFilter() {
-      if (!rawData) return;
-      selectedUser = document.getElementById('user-filter').value;
-      const url = new URL(location.href);
-      selectedUser ? url.searchParams.set('user', selectedUser) : url.searchParams.delete('user');
-      history.replaceState(null, '', url);
-
-      document.getElementById('filter-banner').style.display = selectedUser ? 'block' : 'none';
-      document.getElementById('filter-banner-user').innerText = selectedUser;
-
-      renderCurrentTab();
-    }
-
-    function applyProjectFilter() {
-      selectedProject = document.getElementById('project-filter').value;
-      const url = new URL(location.href);
-      selectedProject ? url.searchParams.set('project', selectedProject) : url.searchParams.delete('project');
-      history.replaceState(null, '', url);
-
-      renderCurrentTab();
-    }
-
-    function getFilteredData() {
-      if (!rawData) return null;
-      const u = selectedUser;
-      const f = rows => (rows || []).filter(r => !u || r.user_email === u);
-
-      return {
-        ...rawData,
-        adoption: f(rawData.adoption),
-        trust_quality: f(rawData.trust_quality),
-        token_economics: f(rawData.token_economics),
-        user_summary: f(rawData.user_summary),
-      };
-    }
-
-    function renderCurrentTab() {
-      const data = getFilteredData();
-      if (!data) return;
-
-      // Update Rate Card footnote on Cost tab if rate_card exists
-      if (data.admin && data.admin.rate_card && data.admin.rate_card.length) {
-        const rcNotes = data.admin.rate_card.map(rc => `${esc(rc.model)}: $${rc.usd_per_1m_tokens}/1M tokens (${esc(rc.source)})`).join(' · ');
-        document.getElementById('rate-card-footnote').innerHTML = `Data: v_ge_app_agy_token_economics. Rate card sources: ${rcNotes}`;
-      }
-
-      if (currentTab === 'overview') {
-        renderOverviewTab(data);
-      } else if (currentTab === 'adoption') {
-        renderAdoptionTab(data);
-      } else if (currentTab === 'value') {
-        renderValueTab(data);
-      } else if (currentTab === 'cost') {
-        renderCostTab(data);
-      } else if (currentTab === 'security') {
-        renderSecurityTab(data);
-      } else if (currentTab === 'fleet') {
-        renderFleetTab(data);
-      }
-    }
-
-    // =========================================================================
-    // 1. OVERVIEW TAB
-    // =========================================================================
-    function renderOverviewTab(data) {
-      const admin = data.admin;
-      const adoption = data.adoption || [];
-      const trust = data.trust_quality || [];
-      const econ = data.token_economics || [];
-      const users = data.user_summary || [];
-
-      // 1. Headline KPIs
-      if (admin && admin.overview) {
-        const ov = admin.overview;
-        document.getElementById('hl-wau').innerText = ov.wau != null ? ov.wau.toLocaleString() : '--';
-        const wauDiff = (ov.wau != null && ov.wau_prev != null) ? (ov.wau - ov.wau_prev) : null;
-        document.getElementById('hl-wau-prev').innerText = wauDiff != null ? (wauDiff >= 0 ? `+${wauDiff} WoW` : `${wauDiff} WoW`) : '--';
-
-        document.getElementById('hl-cost-res').innerText = ov.cost_per_resolved_usd != null ? `$${flt(ov.cost_per_resolved_usd).toFixed(2)}` : '$--';
-        const costDiff = (ov.cost_per_resolved_usd != null && ov.cost_per_resolved_usd_prev != null) ? (flt(ov.cost_per_resolved_usd) - flt(ov.cost_per_resolved_usd_prev)) : null;
-        document.getElementById('hl-cost-res-prev').innerText = costDiff != null ? (costDiff <= 0 ? `${costDiff.toFixed(2)} WoW` : `+${costDiff.toFixed(2)} WoW`) : '--';
-
-        document.getElementById('hl-rework').innerText = ov.rework_rate != null ? `${(flt(ov.rework_rate) * 100).toFixed(0)}%` : '--%';
-        const reworkDiff = (ov.rework_rate != null && ov.rework_rate_prev != null) ? ((flt(ov.rework_rate) - flt(ov.rework_rate_prev)) * 100) : null;
-        document.getElementById('hl-rework-prev').innerText = reworkDiff != null ? (reworkDiff <= 0 ? `${reworkDiff.toFixed(0)}% WoW` : `+${reworkDiff.toFixed(0)}% WoW`) : '--';
-
-        document.getElementById('hl-privacy').innerText = `${ov.privacy_checks_passing ?? '--'}/${ov.privacy_checks_total ?? '--'}`;
-        const passAll = ov.privacy_checks_passing === ov.privacy_checks_total;
-        document.getElementById('hl-privacy-status').innerText = passAll ? 'Passing' : `${(ov.privacy_checks_total || 0) - (ov.privacy_checks_passing || 0)} Failing`;
-        document.getElementById('hl-privacy-status').className = `status-pill ${passAll ? 'status-pass' : 'status-fail'}`;
-
-        document.getElementById('hl-fleet-pct').innerText = ov.fleet_on_current_version_pct != null ? `${flt(ov.fleet_on_current_version_pct).toFixed(0)}%` : '--%';
-        document.getElementById('hl-fleet-ver').innerText = ov.current_version ? `v${ov.current_version}` : '--';
-      } else {
-        document.getElementById('hl-wau').innerText = '--';
-        document.getElementById('hl-cost-res').innerText = '$--';
-        document.getElementById('hl-rework').innerText = '--%';
-        document.getElementById('hl-privacy').innerText = '--/--';
-        document.getElementById('hl-fleet-pct').innerText = '--%';
-      }
-
-      // 2. Alerts Strip
-      const alertsGrid = document.getElementById('alerts-grid');
-      const alerts = (admin && admin.alerts) ? admin.alerts : [];
-      document.getElementById('alert-badge-count').innerText = `${alerts.length} Action Required`;
-      document.getElementById('alert-badge-count').className = `status-pill ${alerts.length > 0 ? 'status-fail' : 'status-pass'}`;
-
-      if (!alerts.length) {
-        alertsGrid.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">No active alerts. ' + (admin ? 'All compliance and budget checks passing.' : 'Run fetch_data.sh to populate admin analytics.') + '</div>';
-      } else {
-        alertsGrid.innerHTML = alerts.map(a => `
-          <div class="alert-item severity-${esc(a.severity || 'amber')}">
-            <div class="alert-content">
-              <div class="alert-meta">
-                <span class="alert-theme-badge">${esc(a.theme || 'Alert')}</span>
-                <strong>${esc(a.title)}</strong>
-              </div>
-              <p style="margin: 0; color: var(--text-main);">${esc(a.detail)}</p>
-            </div>
-            <button type="button" class="alert-btn" onclick="navigateToTab('${esc(a.theme || 'overview')}')">View</button>
-          </div>
-        `).join('');
-      }
-
-      // 3. Overview Top 3 KPI Cards
-      const distinctUsers = new Set(adoption.map(r => r.user_email).filter(Boolean)).size;
-      // Per-trajectory ratios fix: exclude auxiliary calls using trajectory_inferences/trajectory_tokens when present
-      const totalInferences = adoption.reduce((s, r) => s + num(r.total_inferences), 0);
-      const totalTrajInferences = adoption.reduce((s, r) => s + num(r.trajectory_inferences != null ? r.trajectory_inferences : r.total_inferences), 0);
-      const totalTrajectories = users.length
-        ? users.reduce((s, r) => s + num(r.trajectories), 0)
-        : adoption.reduce((s, r) => s + num(r.active_trajectories), 0);
-      const avgInfPerTask = totalTrajectories > 0 ? (totalTrajInferences / totalTrajectories).toFixed(1) : '0';
-
-      const resolvedTraj = users.length
-        ? users.reduce((s, r) => s + num(r.resolved_trajectories), 0)
-        : trust.reduce((s, r) => s + num(r.resolved_trajectories), 0);
-      const totalTrajTrust = users.length
-        ? users.reduce((s, r) => s + num(r.client_trajectories), 0)
-        : trust.reduce((s, r) => s + num(r.total_trajectories), 0);
-      const resolutionRate = totalTrajTrust > 0 ? ((resolvedTraj / totalTrajTrust) * 100).toFixed(1) : '--';
-
-      const permAccepted = trust.reduce((s, r) => s + num(r.permission_grants_accepted), 0);
-      const permTotal = trust.reduce((s, r) => s + num(r.permission_requests_total), 0);
-      const permRate = permTotal > 0 ? ((permAccepted / permTotal) * 100).toFixed(1) : '--';
-
-      const totalTokens = econ.reduce((s, r) => s + num(r.total_tokens), 0);
-      const totalTrajTokens = econ.reduce((s, r) => s + num(r.trajectory_tokens != null ? r.trajectory_tokens : r.total_tokens), 0);
-      const totalListCost = econ.reduce((s, r) => s + flt(r.estimated_cost_usd_list), 0);
-      const totalDiscCost = econ.reduce((s, r) => s + flt(r.estimated_cost_usd_discounted), 0);
-      const avgTokensPerTurn = totalTrajInferences > 0 ? Math.round(totalTrajTokens / totalTrajInferences / 1000) : (totalInferences > 0 ? Math.round(totalTokens / totalInferences / 1000) : 0);
-
-      document.getElementById('kpi-dau').innerText = distinctUsers;
-      document.getElementById('kpi-inferences').innerText = totalInferences.toLocaleString();
-      document.getElementById('kpi-trajectories').innerText = totalTrajectories.toLocaleString();
-      document.getElementById('kpi-resolution-rate').innerText = resolutionRate + (resolutionRate === '--' ? '' : '%');
-      document.getElementById('kpi-perm-rate').innerText = permRate + (permRate === '--' ? '' : '%');
-      document.getElementById('kpi-inf-per-task').innerText = avgInfPerTask;
-      document.getElementById('kpi-cost').innerText = '$' + totalListCost.toFixed(2) + ' est. (list rate)';
-      document.getElementById('kpi-disc-cost').innerText = '$' + totalDiscCost.toFixed(2) + ' est. (list rate)';
-      document.getElementById('kpi-tokens').innerText = (totalTokens / 1000000).toFixed(1) + ' M';
-      document.getElementById('kpi-tokens-per-turn').innerText = avgTokensPerTurn + ' K';
-
-      // 4. User Insights Table
-      renderUserTable(rawData.user_summary || [], selectedUser);
-    }
-
-    function renderUserTable(users, selected) {
-      const tbody = document.querySelector('#user-table tbody');
-      if (!users.length) {
-        tbody.innerHTML = '<tr><td colspan="11" style="text-align: center;">No per-user data. Run fetch_data.sh to populate.</td></tr>';
-        return;
-      }
-      tbody.innerHTML = users.map(r => {
-        const share = flt(r.token_share) * 100;
-        const res = r.resolution_rate == null ? '--' : (flt(r.resolution_rate) * 100).toFixed(1) + '%';
-        const last = r.last_seen ? new Date(String(r.last_seen).replace(' ', 'T').replace(/ UTC$/, 'Z')).toLocaleDateString() : '--';
-        const infPerTraj = r.trajectory_inferences != null && num(r.trajectories) > 0
-          ? (num(r.trajectory_inferences) / num(r.trajectories)).toFixed(1)
-          : (r.inferences_per_trajectory ?? '--');
-        return `
-        <tr class="${r.user_email === selected ? 'selected' : ''}" data-user="${esc(r.user_email)}">
-          <td><strong>${esc(shortUser(r.user_email))}</strong><div class="muted">${esc(r.user_email)}</div></td>
-          <td>${num(r.active_days)}</td>
-          <td>${num(r.trajectories).toLocaleString()}</td>
-          <td>${num(r.inferences).toLocaleString()}</td>
-          <td>${infPerTraj}</td>
-          <td>${num(r.total_tokens).toLocaleString()}</td>
-          <td class="share-cell">${share.toFixed(1)}%<div class="share-bar" style="width:${Math.max(share, 1)}%"></div></td>
-          <td>${num(r.avg_tokens_per_inference).toLocaleString()}</td>
-          <td>${res}</td>
-          <td><code>${esc(r.top_model || '--')}</code><div class="muted">${num(r.models_used)} model(s)</div></td>
-          <td>${last}</td>
-        </tr>`;
-      }).join('');
-      tbody.querySelectorAll('tr[data-user]').forEach(tr => {
-        tr.onclick = () => selectUser(tr.dataset.user === selected ? '' : tr.dataset.user);
-      });
-    }
-
-    // =========================================================================
-    // 2. ADOPTION & ENABLEMENT TAB
-    // =========================================================================
-    function renderAdoptionTab(data) {
-      const adoption = rawData.adoption || []; // Org-level view
-      const admin = rawData.admin;
-
-      // Adoption KPIs
-      const distinctUsers = new Set(adoption.map(r => r.user_email).filter(Boolean)).size;
-      const totalInferences = adoption.reduce((s, r) => s + num(r.total_inferences), 0);
-      const totalTrajectories = adoption.reduce((s, r) => s + num(r.active_trajectories), 0);
-      document.getElementById('adopt-kpi-dau').innerText = distinctUsers.toLocaleString();
-      document.getElementById('adopt-kpi-wau').innerText = (admin && admin.overview && admin.overview.wau != null) ? admin.overview.wau.toLocaleString() : '--';
-      document.getElementById('adopt-kpi-inf').innerText = totalInferences.toLocaleString();
-      document.getElementById('adopt-kpi-traj').innerText = totalTrajectories.toLocaleString();
-
-      // Aggregate by date for Inferences & Trajectories
-      const byDate = {};
-      adoption.forEach(r => {
-        byDate[r.event_date] = byDate[r.event_date] || { inf: 0, traj: 0 };
-        byDate[r.event_date].inf += num(r.total_inferences);
-        byDate[r.event_date].traj += num(r.active_trajectories);
-      });
-      const dates = Object.keys(byDate).sort();
-
-      // Chart 1: Inferences Line
-      safeChart('chart-inferences', {
-        type: 'line',
-        data: {
-          labels: dates,
-          datasets: [{
-            label: 'Inferences',
-            data: dates.map(d => byDate[d].inf),
-            borderColor: '#1A73E8',
-            backgroundColor: 'rgba(26, 115, 232, 0.08)',
-            fill: true,
-            tension: 0.3,
-            borderWidth: 2
-          }]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
-      });
-
-      // Chart 2: Trajectories Bar
-      safeChart('chart-trajectories', {
-        type: 'bar',
-        data: {
-          labels: dates,
-          datasets: [{
-            label: 'Active Trajectories',
-            data: dates.map(d => byDate[d].traj),
-            backgroundColor: '#1E8E3E',
-            borderRadius: 6
-          }]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
-      });
-
-      // Customization Adoption (NEW)
-      const custContent = document.getElementById('customization-content');
-      if (admin && admin.adoption && admin.adoption.customization) {
-        const cust = admin.adoption.customization;
-        document.getElementById('cust-skills-pct').innerText = cust.skills_pct != null ? `${flt(cust.skills_pct).toFixed(1)}%` : '--%';
-        document.getElementById('cust-subagents-pct').innerText = cust.subagents_pct != null ? `${flt(cust.subagents_pct).toFixed(1)}%` : '--%';
-        document.getElementById('cust-slash-pct').innerText = cust.slash_pct != null ? `${flt(cust.slash_pct).toFixed(1)}%` : '--%';
-        document.getElementById('cust-hooks-pct').innerText = cust.hooks_pct != null ? `${flt(cust.hooks_pct).toFixed(1)}%` : '--%';
-
-        const weekly = cust.weekly || [];
-        const wLabels = weekly.map(w => w.week_start);
-        safeChart('chart-customization-weekly', {
-          type: 'line',
-          data: {
-            labels: wLabels,
-            datasets: [
-              { label: 'Skills %', data: weekly.map(w => w.skills_pct), borderColor: '#1A73E8', borderWidth: 2, tension: 0.2 },
-              { label: 'Subagents %', data: weekly.map(w => w.subagents_pct), borderColor: '#8430CE', borderWidth: 2, tension: 0.2 },
-              { label: 'Slash %', data: weekly.map(w => w.slash_pct), borderColor: '#1E8E3E', borderWidth: 2, tension: 0.2 },
-              { label: 'Hooks %', data: weekly.map(w => w.hooks_pct), borderColor: '#D97706', borderWidth: 2, tension: 0.2 }
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false }
-        });
-
-        const topCmds = cust.top_slash_commands || [];
-        const cmdsList = document.getElementById('top-slash-commands-list');
-        if (topCmds.length) {
-          cmdsList.innerHTML = topCmds.map(c => `
-            <div style="background:#F8FAFC; border:1px solid #E2E8F0; padding:4px 8px; border-radius:6px; font-size:12px;">
-              <span class="slash-pill">${esc(c.command)}</span>
-              <span style="font-weight:700; margin-left:4px;">${num(c.uses).toLocaleString()}</span>
-              <span class="muted">(${num(c.users)} users)</span>
-            </div>
-          `).join('');
-        } else {
-          cmdsList.innerHTML = '<span class="muted">No slash command usage logged.</span>';
-        }
-      } else {
-        custContent.innerHTML = '<div class="empty-state">Run <code>fetch_data.sh</code> to populate admin analytics</div>';
-      }
-
-      // Surface Mix Weekly (NEW)
-      const surfContent = document.getElementById('surface-mix-content');
-      if (admin && admin.adoption && admin.adoption.surface_mix_weekly) {
-        document.getElementById('multi-surface-pct').innerText = admin.adoption.multi_surface_users_pct != null
-          ? `${flt(admin.adoption.multi_surface_users_pct).toFixed(1)}%` : '--%';
-
-        const mixRows = admin.adoption.surface_mix_weekly || [];
-        const wks = [...new Set(mixRows.map(r => r.week_start))].sort();
-        const clients = [...new Set(mixRows.map(r => r.client_name))].sort();
-        const colors = ['#1A73E8', '#1E8E3E', '#8430CE', '#D97706'];
-
-        const datasets = clients.map((cl, idx) => ({
-          label: cl,
-          data: wks.map(w => {
-            const match = mixRows.find(r => r.week_start === w && r.client_name === cl);
-            return match ? num(match.users) : 0;
-          }),
-          backgroundColor: colors[idx % colors.length]
-        }));
-
-        safeChart('chart-surface-mix', {
-          type: 'bar',
-          data: { labels: wks, datasets },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { x: { stacked: true }, y: { stacked: true } }
-          }
-        });
-      } else {
-        surfContent.innerHTML = '<div class="empty-state">Run <code>fetch_data.sh</code> to populate admin analytics</div>';
-      }
-    }
-
-    // =========================================================================
-    // 3. VALUE & QUALITY TAB
-    // =========================================================================
-    function renderValueTab(data) {
-      const trust = rawData.trust_quality || [];
-      const admin = rawData.admin;
-
-      // KPIs
-      const resolvedTraj = trust.reduce((s, r) => s + num(r.resolved_trajectories), 0);
-      const totalTrajTrust = trust.reduce((s, r) => s + num(r.total_trajectories), 0);
-      const resolutionRate = totalTrajTrust > 0 ? ((resolvedTraj / totalTrajTrust) * 100).toFixed(1) : '--';
-      document.getElementById('val-kpi-res').innerText = resolutionRate + (resolutionRate === '--' ? '' : '%');
-
-      const permAccepted = trust.reduce((s, r) => s + num(r.permission_grants_accepted), 0);
-      const permTotal = trust.reduce((s, r) => s + num(r.permission_requests_total), 0);
-      const permRate = permTotal > 0 ? ((permAccepted / permTotal) * 100).toFixed(1) : '--';
-      document.getElementById('val-kpi-perm').innerText = permRate + (permRate === '--' ? '' : '%');
-
-      if (admin && admin.value) {
-        const v = admin.value;
-        document.getElementById('val-kpi-rework').innerText = (admin.overview && admin.overview.rework_rate != null)
-          ? `${(flt(admin.overview.rework_rate) * 100).toFixed(1)}%` : '--%';
-        document.getElementById('val-kpi-cost-task').innerText = (admin.overview && admin.overview.cost_per_resolved_usd != null)
-          ? `$${flt(admin.overview.cost_per_resolved_usd).toFixed(2)} est. (list rate)` : '$--';
-      } else {
-        document.getElementById('val-kpi-rework').innerText = '--%';
-        document.getElementById('val-kpi-cost-task').innerText = '$--';
-      }
-
-      // Existing Tool Approvals Chart
-      const dates = [...new Set(trust.map(r => r.event_date))].sort();
-      const permsByDate = {};
-      dates.forEach(d => { permsByDate[d] = { acc: 0, rej: 0 }; });
-      trust.forEach(r => {
-        permsByDate[r.event_date].acc += num(r.permission_grants_accepted);
-        permsByDate[r.event_date].rej += num(r.permission_grants_rejected);
-      });
-      safeChart('chart-permissions', {
-        type: 'bar',
-        data: {
-          labels: dates,
-          datasets: [
-            { label: 'Accepted', data: dates.map(d => permsByDate[d].acc), backgroundColor: '#1E8E3E' },
-            { label: 'Rejected', data: dates.map(d => permsByDate[d].rej), backgroundColor: '#D93025' }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: { x: { stacked: true }, y: { stacked: true } }
-        }
-      });
-
-      // Proposal Outcomes by Model & Weekly Rework Trend (NEW)
-      if (admin && admin.value && admin.value.proposal_outcomes_by_model) {
-        const outcomes = admin.value.proposal_outcomes_by_model;
-        const models = outcomes.map(o => o.experience || o.model);
-        safeChart('chart-proposal-outcomes', {
-          type: 'bar',
-          data: {
-            labels: models,
-            datasets: [
-              { label: 'Accepted', data: outcomes.map(o => num(o.accepted)), backgroundColor: '#1E8E3E' },
-              { label: 'Modified', data: outcomes.map(o => num(o.modified)), backgroundColor: '#D97706' },
-              { label: 'Rejected', data: outcomes.map(o => num(o.rejected)), backgroundColor: '#D93025' }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { x: { stacked: true }, y: { stacked: true } }
-          }
-        });
-
-        const weeklyRework = admin.value.proposal_outcomes_weekly || [];
-        safeChart('chart-rework-trend', {
-          type: 'line',
-          data: {
-            labels: weeklyRework.map(w => w.week_start),
-            datasets: [{
-              label: 'Rework Rate %',
-              data: weeklyRework.map(w => (flt(w.rework_rate) * 100).toFixed(1)),
-              borderColor: '#D97706',
-              backgroundColor: 'rgba(217, 119, 6, 0.08)',
-              fill: true,
-              borderWidth: 2,
-              tension: 0.2
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false }
-        });
-      } else {
-        if (charts['chart-proposal-outcomes']) charts['chart-proposal-outcomes'].destroy();
-        if (charts['chart-rework-trend']) charts['chart-rework-trend'].destroy();
-      }
-
-      // Abandoned spend donut & stats
-      if (admin && admin.value && admin.value.outcomes_summary) {
-        const sm = admin.value.outcomes_summary;
-        document.getElementById('val-resolved-count').innerText = num(sm.resolved).toLocaleString();
-        document.getElementById('val-abandoned-count').innerText = num(sm.abandoned).toLocaleString();
-        document.getElementById('val-abandoned-cost').innerText = `$${flt(sm.abandoned_cost_usd).toFixed(2)} est. (list rate)`;
-
-        safeChart('chart-outcomes-donut', {
-          type: 'doughnut',
-          data: {
-            labels: ['Resolved', 'Abandoned', 'In-Flight'],
-            datasets: [{
-              data: [num(sm.resolved), num(sm.abandoned), num(sm.in_flight)],
-              backgroundColor: ['#1E8E3E', '#D93025', '#1A73E8']
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false }
-        });
-      }
-
-      // Outcomes by Model & Tier Table
-      const tierTbody = document.querySelector('#table-outcomes-tier tbody');
-      if (admin && admin.value && admin.value.outcomes_by_model_tier && admin.value.outcomes_by_model_tier.length) {
-        tierTbody.innerHTML = admin.value.outcomes_by_model_tier.map(r => `
-          <tr>
-            <td><code>${esc(r.model)}</code></td>
-            <td><span class="status-pill status-neutral">${esc(r.experience || 'default')}</span></td>
-            <td style="text-align: right;">${num(r.trajectories).toLocaleString()}</td>
-            <td style="text-align: right;">${num(r.resolved).toLocaleString()}</td>
-            <td style="text-align: right; color: var(--green-primary); font-weight:600;">${(flt(r.resolution_rate) * 100).toFixed(1)}%</td>
-            <td style="text-align: right;">$${flt(r.est_cost_usd).toFixed(2)} est. (list rate)</td>
-            <td style="text-align: right; font-weight:700; color: var(--blue-primary);">$${flt(r.cost_per_resolved_usd).toFixed(2)} est. (list rate)</td>
-            <td style="text-align: right; color: var(--red-primary);">$${flt(r.abandoned_cost_usd).toFixed(2)} est. (list rate)</td>
-          </tr>
-        `).join('');
-      } else {
-        tierTbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">' + (admin ? 'No outcomes by tier found.' : 'Run fetch_data.sh to populate admin analytics.') + '</td></tr>';
-      }
-    }
-
-    // =========================================================================
-    // 4. COST & FINOPS TAB
-    // =========================================================================
-    function renderCostTab(data) {
-      const econ = rawData.token_economics || [];
-      const admin = rawData.admin;
-
-      // KPIs
-      const totalTokens = econ.reduce((s, r) => s + num(r.total_tokens), 0);
-      const totalListCost = econ.reduce((s, r) => s + flt(r.estimated_cost_usd_list), 0);
-      const totalDiscCost = econ.reduce((s, r) => s + flt(r.estimated_cost_usd_discounted), 0);
-      document.getElementById('cost-kpi-tokens').innerText = (totalTokens / 1000000).toFixed(1) + ' M';
-      document.getElementById('cost-kpi-list').innerText = '$' + totalListCost.toFixed(2) + ' est. (list rate)';
-      document.getElementById('cost-kpi-disc').innerText = '$' + totalDiscCost.toFixed(2) + ' est. (list rate)';
-
-      let auxTokenPct = '--';
-      if (admin && admin.cost && admin.cost.aux_overhead_by_version && admin.cost.aux_overhead_by_version.length) {
-        const totalAuxTokens = admin.cost.aux_overhead_by_version.reduce((s, r) => s + num(r.aux_tokens), 0);
-        const totalCallsTokens = admin.cost.aux_overhead_by_version.reduce((s, r) => s + num(r.total_tokens), 0);
-        if (totalCallsTokens > 0) auxTokenPct = ((totalAuxTokens / totalCallsTokens) * 100).toFixed(1);
-      }
-      document.getElementById('cost-kpi-aux').innerText = auxTokenPct + (auxTokenPct === '--' ? '' : '%');
-
-      // Project Showback Table (filtered by selectedProject if set)
-      const showbackTbody = document.querySelector('#table-project-showback tbody');
-      if (admin && admin.cost && admin.cost.project_showback && admin.cost.project_showback.length) {
-        const filteredProjects = admin.cost.project_showback.filter(p => !selectedProject || p.project_id === selectedProject);
-        if (!filteredProjects.length) {
-          showbackTbody.innerHTML = '<tr><td colspan="10" style="text-align: center;">No projects match current filter.</td></tr>';
-        } else {
-          showbackTbody.innerHTML = filteredProjects.map(p => {
-            const budgetPct = p.budget_pct != null ? flt(p.budget_pct) : null;
-            let statusBadge = '<span class="status-pill status-neutral">No Budget</span>';
-            let barFill = '';
-            if (p.status === 'ok') statusBadge = '<span class="status-pill status-ok">OK</span>';
-            else if (p.status === 'warn') statusBadge = '<span class="status-pill status-warn">Warning (80%+)</span>';
-            else if (p.status === 'over') statusBadge = '<span class="status-pill status-fail">Over Budget</span>';
-
-            const fillClass = budgetPct > 100 ? 'over' : (budgetPct >= 80 ? 'warn' : 'ok');
-            const barWidth = budgetPct != null ? Math.min(Math.max(budgetPct, 2), 100) : 0;
-            const barDisplay = budgetPct != null
-              ? `<div class="budget-bar-container"><div class="budget-bar-bg"><div class="budget-bar-fill ${fillClass}" style="width:${barWidth}%;"></div></div><span style="font-weight:700; font-size:12px;">${budgetPct.toFixed(0)}%</span></div>`
-              : '<span class="muted">Set in admin_config.json</span>';
-
-            return `
-              <tr>
-                <td><strong>${esc(p.project_id)}</strong></td>
-                <td><code>${esc(p.project_number || '--')}</code></td>
-                <td style="text-align: right;">${num(p.users).toLocaleString()}</td>
-                <td style="text-align: right;">${num(p.trajectories).toLocaleString()}</td>
-                <td style="text-align: right;">${num(p.inferences).toLocaleString()}</td>
-                <td style="text-align: right;">${(num(p.total_tokens) / 1000000).toFixed(1)} M</td>
-                <td style="text-align: right; font-weight:700;">$${flt(p.est_cost_usd).toFixed(2)} est. (list rate)</td>
-                <td style="text-align: right;">${p.budget_usd != null ? `$${flt(p.budget_usd).toFixed(2)} est. (list rate)` : '--'}</td>
-                <td>${barDisplay}</td>
-                <td>${statusBadge}</td>
-              </tr>
-            `;
-          }).join('');
-        }
-      } else {
-        showbackTbody.innerHTML = '<tr><td colspan="10" style="text-align: center;">' + (admin ? 'No project showback records.' : 'Run fetch_data.sh to populate admin analytics.') + '</td></tr>';
-      }
-
-      // Existing Daily Tokens & Cost Charts
-      const byDate = {};
-      econ.forEach(r => {
-        byDate[r.event_date] = byDate[r.event_date] || { tokens: 0, listCost: 0, discCost: 0 };
-        byDate[r.event_date].tokens += num(r.total_tokens);
-        byDate[r.event_date].listCost += flt(r.estimated_cost_usd_list);
-        byDate[r.event_date].discCost += flt(r.estimated_cost_usd_discounted);
-      });
-      const dates = Object.keys(byDate).sort();
-
-      safeChart('chart-tokens', {
-        type: 'bar',
-        data: {
-          labels: dates,
-          datasets: [{
-            label: 'Total Tokens',
-            data: dates.map(d => byDate[d].tokens),
-            backgroundColor: '#8430CE',
-            borderRadius: 6
-          }]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
-      });
-
-      safeChart('chart-cost', {
-        type: 'line',
-        data: {
-          labels: dates,
-          datasets: [
-            {
-              label: 'List Cost est. (list rate) (USD)',
-              data: dates.map(d => byDate[d].listCost.toFixed(3)),
-              borderColor: '#D93025',
-              borderWidth: 2,
-              tension: 0.2
-            },
-            {
-              label: '50% Flash Discount est. (list rate) (USD)',
-              data: dates.map(d => byDate[d].discCost.toFixed(3)),
-              borderColor: '#1E8E3E',
-              borderWidth: 2,
-              borderDash: [5, 5],
-              tension: 0.2
-            }
-          ]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
-      });
-
-      // Project Daily Spend Chart (NEW)
-      if (admin && admin.cost && admin.cost.project_daily) {
-        const pdRows = admin.cost.project_daily.filter(r => !selectedProject || r.project_id === selectedProject);
-        const pDates = [...new Set(pdRows.map(r => r.event_date))].sort();
-        const pIds = [...new Set(pdRows.map(r => r.project_id))].sort();
-        const colors = ['#1A73E8', '#1E8E3E', '#8430CE', '#D97706', '#EA4335'];
-
-        const datasets = pIds.map((pid, idx) => ({
-          label: pid,
-          data: pDates.map(d => {
-            const match = pdRows.find(r => r.event_date === d && r.project_id === pid);
-            return match ? flt(match.est_cost_usd) : 0;
-          }),
-          backgroundColor: colors[idx % colors.length]
-        }));
-
-        safeChart('chart-project-daily', {
-          type: 'bar',
-          data: { labels: pDates, datasets },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { x: { stacked: true }, y: { stacked: true } }
-          }
-        });
-      }
-
-      // Background Overhead Weekly Chart & Version Table (NEW)
-      if (admin && admin.cost && admin.cost.aux_overhead_weekly) {
-        const auxWeekly = admin.cost.aux_overhead_weekly || [];
-        safeChart('chart-aux-weekly', {
-          type: 'line',
-          data: {
-            labels: auxWeekly.map(w => w.week_start),
-            datasets: [{
-              label: 'Auxiliary Token %',
-              data: auxWeekly.map(w => flt(w.aux_token_pct)),
-              borderColor: '#D97706',
-              backgroundColor: 'rgba(217, 119, 6, 0.08)',
-              fill: true,
-              borderWidth: 2,
-              tension: 0.2
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false }
-        });
-      }
-
-      const auxTbody = document.querySelector('#table-aux-version tbody');
-      if (admin && admin.cost && admin.cost.aux_overhead_by_version && admin.cost.aux_overhead_by_version.length) {
-        auxTbody.innerHTML = admin.cost.aux_overhead_by_version.map(r => `
-          <tr>
-            <td><strong>${esc(r.client_name)}</strong></td>
-            <td><code>${esc(r.client_version)}</code></td>
-            <td style="text-align: right;">${num(r.total_calls).toLocaleString()}</td>
-            <td style="text-align: right;">${num(r.aux_calls).toLocaleString()}</td>
-            <td style="text-align: right;">${flt(r.aux_call_pct).toFixed(1)}%</td>
-            <td style="text-align: right;">${(num(r.total_tokens) / 1000000).toFixed(1)} M</td>
-            <td style="text-align: right;">${(num(r.aux_tokens) / 1000000).toFixed(1)} M</td>
-            <td style="text-align: right; font-weight:700; color: var(--amber-primary);">${flt(r.aux_token_pct).toFixed(1)}%</td>
-            <td>${esc(r.first_seen || '--')}</td>
-          </tr>
-        `).join('');
-      } else {
-        auxTbody.innerHTML = '<tr><td colspan="9" style="text-align: center;">' + (admin ? 'No aux overhead records.' : 'Run fetch_data.sh to populate admin analytics.') + '</td></tr>';
-      }
-
-      // Automation vs Seat Spend Chart (NEW)
-      if (admin && admin.cost && admin.cost.automation_vs_seat_weekly) {
-        const autoRows = admin.cost.automation_vs_seat_weekly || [];
-        const aWeeks = [...new Set(autoRows.map(r => r.week_start))].sort();
-        const tiers = [...new Set(autoRows.map(r => r.subscription_tier_type))].sort();
-        const colors = ['#1E8E3E', '#8430CE', '#1A73E8'];
-
-        const datasets = tiers.map((t, idx) => ({
-          label: t,
-          data: aWeeks.map(w => {
-            const m = autoRows.find(r => r.week_start === w && r.subscription_tier_type === t);
-            return m ? num(m.total_tokens) : 0;
-          }),
-          backgroundColor: colors[idx % colors.length]
-        }));
-
-        safeChart('chart-automation-seat', {
-          type: 'bar',
-          data: { labels: aWeeks, datasets },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { x: { stacked: true }, y: { stacked: true } }
-          }
-        });
-      }
-
-      // Rightsizing Table (NEW)
-      const rzTbody = document.querySelector('#table-rightsizing tbody');
-      if (admin && admin.cost && admin.cost.rightsizing && admin.cost.rightsizing.length) {
-        const filteredRz = admin.cost.rightsizing.filter(r => !selectedProject || r.project_id === selectedProject);
-        if (!filteredRz.length) {
-          rzTbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No right-sizing records match current project filter.</td></tr>';
-        } else {
-          rzTbody.innerHTML = filteredRz.map(r => `
-            <tr>
-              <td><strong>${esc(r.project_id)}</strong></td>
-              <td><code>${esc(r.experience)}</code></td>
-              <td style="text-align: right;">${num(r.trajectories).toLocaleString()}</td>
-              <td style="text-align: right; color: var(--red-primary); font-weight:600;">${num(r.short_trajectories).toLocaleString()}</td>
-              <td style="text-align: right; color: var(--amber-primary); font-weight:700;">${flt(r.short_pct).toFixed(1)}%</td>
-              <td style="text-align: right;">$${flt(r.short_cost_usd).toFixed(2)} est. (list rate)</td>
-            </tr>
-          `).join('');
-        }
-      } else {
-        rzTbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">' + (admin ? 'No high-tier experience records.' : 'Run fetch_data.sh to populate admin analytics.') + '</td></tr>';
-      }
-
-      // Runaway Sessions Table (NEW)
-      const runTbody = document.querySelector('#table-runaway tbody');
-      if (admin && admin.cost && admin.cost.runaway_sessions && admin.cost.runaway_sessions.length) {
-        const filteredRun = admin.cost.runaway_sessions.filter(r => !selectedProject || r.project_id === selectedProject);
-        if (!filteredRun.length) {
-          runTbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No runaway sessions match current project filter.</td></tr>';
-        } else {
-          runTbody.innerHTML = filteredRun.map(r => `
-            <tr>
-              <td><code>${esc(r.trajectory_id)}</code></td>
-              <td>${esc(r.project_id)}</td>
-              <td title="${esc(r.user_email)}">${esc(shortUser(r.user_email))}</td>
-              <td style="text-align: right; font-weight:700; color: var(--red-primary);">${num(r.steps)}</td>
-              <td style="text-align: right;">$${flt(r.est_cost_usd).toFixed(3)} est. (list rate)</td>
-              <td>${r.resolved ? '<span class="status-pill status-ok">Resolved</span>' : '<span class="status-pill status-fail">Unresolved</span>'}</td>
-            </tr>
-          `).join('');
-        }
-      } else {
-        runTbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">' + (admin ? 'No runaway sessions detected (&ge;100 steps).' : 'Run fetch_data.sh to populate admin analytics.') + '</td></tr>';
-      }
-
-      // Existing Model & Tier Attribution Table
-      const attrTbody = document.querySelector('#attribution-table tbody');
-      if (!econ || econ.length === 0) {
-        attrTbody.innerHTML = '<tr><td colspan="9" style="text-align: center;">No records found.</td></tr>';
-      } else {
-        attrTbody.innerHTML = econ.map(r => `
-          <tr>
-            <td><strong>${r.event_date}</strong></td>
-            <td title="${esc(r.user_email)}">${esc(shortUser(r.user_email))}</td>
-            <td><code>${esc(r.model)}</code></td>
-            <td>${num(r.total_inferences).toLocaleString()}</td>
-            <td>${r.active_trajectories || 0}</td>
-            <td>${num(r.total_tokens).toLocaleString()}</td>
-            <td>$${flt(r.estimated_cost_usd_list).toFixed(4)} est. (list rate)</td>
-            <td>$${flt(r.estimated_cost_usd_discounted).toFixed(4)} est. (list rate)</td>
-            <td><span class="status-pill status-ok">${r.subscription_tier_type || 'SEAT_INCLUDED'}</span></td>
-          </tr>
-        `).join('');
-      }
-    }
-
-    // =========================================================================
-    // 5. SECURITY & COMPLIANCE TAB
-    // =========================================================================
-    function renderSecurityTab(data) {
-      const admin = data.admin;
-
-      // Privacy Checks Table & Facts
-      const checksTbody = document.querySelector('#table-privacy-checks tbody');
-      if (admin && admin.security && admin.security.privacy_checks && admin.security.privacy_checks.length) {
-        checksTbody.innerHTML = admin.security.privacy_checks.map(c => {
-          let badge = '<span class="status-pill status-neutral">UNKNOWN</span>';
-          if (c.status === 'PASS') badge = '<span class="status-pill status-pass">PASS</span>';
-          else if (c.status === 'FAIL') badge = '<span class="status-pill status-fail">FAIL</span>';
-          else if (c.status === 'WARN') badge = '<span class="status-pill status-warn">WARN</span>';
-          return `
-            <tr>
-              <td><strong>${esc(c.label)}</strong></td>
-              <td>${badge}</td>
-              <td>${esc(c.detail)}</td>
-            </tr>
-          `;
-        }).join('');
-      } else {
-        checksTbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">' + (admin ? 'No privacy checks found.' : 'Run fetch_data.sh to populate admin analytics.') + '</td></tr>';
-      }
-
-      if (admin && admin.security && admin.security.privacy_facts) {
-        const pf = admin.security.privacy_facts;
-        document.getElementById('priv-req-total').innerText = num(pf.requests_total).toLocaleString();
-        document.getElementById('priv-req-prompts').innerText = num(pf.requests_with_prompt_text).toLocaleString();
-        document.getElementById('priv-resp-candidates').innerText = num(pf.responses_with_candidates).toLocaleString();
-        document.getElementById('priv-oldest-ts').innerText = pf.oldest_request_ts || '--';
-        document.getElementById('priv-expiration').innerText = pf.partition_expiration_days != null ? `${pf.partition_expiration_days} days` : 'Not set';
-        document.getElementById('priv-user-emails').innerText = num(pf.distinct_user_emails).toLocaleString();
-      }
-
-      // Identity Domains Table
-      const domTbody = document.querySelector('#table-identity-domains tbody');
-      if (admin && admin.security && admin.security.identity_domains && admin.security.identity_domains.length) {
-        domTbody.innerHTML = admin.security.identity_domains.map(d => {
-          const badge = d.is_corporate
-            ? '<span class="status-pill status-ok">Corporate</span>'
-            : '<span class="status-pill status-warn">External Domain</span>';
-          return `
-            <tr>
-              <td><strong>${esc(d.domain)}</strong></td>
-              <td>${badge}</td>
-              <td style="text-align: right;">${num(d.users).toLocaleString()}</td>
-              <td style="text-align: right;">${num(d.projects).toLocaleString()}</td>
-              <td style="text-align: right;">${num(d.inferences).toLocaleString()}</td>
-              <td>${esc(d.first_seen || '--')}</td>
-              <td>${esc(d.last_seen || '--')}</td>
-            </tr>
-          `;
-        }).join('');
-      } else {
-        domTbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">' + (admin ? 'No domain identities found.' : 'Run fetch_data.sh to populate admin analytics.') + '</td></tr>';
-      }
-
-      // Approval Posture Table (filtered by selectedProject)
-      const appTbody = document.querySelector('#table-approval-posture tbody');
-      if (admin && admin.security && admin.security.approval_posture_by_project && admin.security.approval_posture_by_project.length) {
-        const filteredApp = admin.security.approval_posture_by_project.filter(r => !selectedProject || r.project_id === selectedProject);
-        if (!filteredApp.length) {
-          appTbody.innerHTML = '<tr><td colspan="9" style="text-align: center;">No approval records match current project filter.</td></tr>';
-        } else {
-          appTbody.innerHTML = filteredApp.map(r => `
-            <tr>
-              <td><strong>${esc(r.project_id)}</strong></td>
-              <td style="text-align: right;">${num(r.users).toLocaleString()}</td>
-              <td style="text-align: right; color: var(--green-primary);">${num(r.grants_accepted).toLocaleString()}</td>
-              <td style="text-align: right; color: var(--red-primary);">${num(r.grants_rejected).toLocaleString()}</td>
-              <td style="text-align: right;">${(flt(r.reject_rate) * 100).toFixed(1)}%</td>
-              <td style="text-align: right;">${num(r.fast_grants).toLocaleString()}</td>
-              <td style="text-align: right; font-weight:700; color: ${flt(r.fast_grant_pct) > 20 ? 'var(--red-primary)' : 'var(--text-main)'};">${flt(r.fast_grant_pct).toFixed(1)}%</td>
-              <td style="text-align: right;">${r.median_decision_seconds != null ? `${flt(r.median_decision_seconds).toFixed(1)}s` : '--'}</td>
-              <td style="text-align: right; color: ${num(r.zero_reject_high_volume_users) > 0 ? 'var(--amber-primary)' : 'var(--text-muted)'}; font-weight:700;">${num(r.zero_reject_high_volume_users)}</td>
-            </tr>
-          `).join('');
-        }
-      } else {
-        appTbody.innerHTML = '<tr><td colspan="9" style="text-align: center;">' + (admin ? 'No approval posture records.' : 'Run fetch_data.sh to populate admin analytics.') + '</td></tr>';
-      }
-
-      // Audit Export Card
-      if (admin && admin.security && admin.security.audit_export) {
-        const ax = admin.security.audit_export;
-        document.getElementById('audit-export-status').innerText = ax.configured ? 'Configured' : 'Not Configured';
-        document.getElementById('audit-export-status').className = `status-pill ${ax.configured ? 'status-ok' : 'status-neutral'}`;
-        document.getElementById('audit-export-note').innerText = ax.note || (ax.configured ? 'Scheduled export to GCS active.' : 'Scheduled export to GCS is not configured in this build.');
-      }
-    }
-
-    // =========================================================================
-    // 6. FLEET & MODELS TAB
-    // =========================================================================
-    function renderFleetTab(data) {
-      const adoption = rawData.adoption || [];
-      const admin = rawData.admin;
-
-      // Model Distribution Donut
-      const byModel = {};
-      adoption.forEach(r => {
-        byModel[r.model] = (byModel[r.model] || 0) + num(r.total_inferences);
-      });
-      const models = Object.keys(byModel);
-
-      safeChart('chart-models', {
-        type: 'doughnut',
-        data: {
-          labels: models,
-          datasets: [{
-            data: models.map(m => byModel[m]),
-            backgroundColor: ['#1A73E8', '#1E8E3E', '#D97706', '#8430CE', '#EA4335']
-          }]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
-      });
-
-      // Client Version Distribution Weekly (NEW)
-      if (admin && admin.fleet && admin.fleet.version_distribution_weekly) {
-        const vRows = admin.fleet.version_distribution_weekly || [];
-        const wks = [...new Set(vRows.map(r => r.week_start))].sort();
-        const versions = [...new Set(vRows.map(r => r.client_version))].sort();
-        const colors = ['#64748B', '#1A73E8', '#1E8E3E', '#8430CE'];
-
-        const datasets = versions.map((v, idx) => ({
-          label: `v${v}`,
-          data: wks.map(w => {
-            const match = vRows.find(r => r.week_start === w && r.client_version === v);
-            return match ? num(match.users) : 0;
-          }),
-          backgroundColor: colors[idx % colors.length]
-        }));
-
-        safeChart('chart-version-distribution', {
-          type: 'bar',
-          data: { labels: wks, datasets },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { x: { stacked: true }, y: { stacked: true } }
-          }
-        });
-      }
-    }
-
-    window.onload = () => {
-      handleHashChange();
-      loadData();
-    };
-    window.addEventListener('hashchange', handleHashChange);
-  </script>
+  <div class="error" id="error-box"></div>
+  <div class="filter-banner" id="filter-banner"><span id="filter-text"></span><a id="filter-clear">Clear filters</a></div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-tab="overview">Overview</div>
+    <div class="tab" data-tab="adoption">Adoption &amp; Enablement</div>
+    <div class="tab" data-tab="fleet">Fleet &amp; Models</div>
+    <div class="tab" data-tab="tokens">Usage &amp; Tokens</div>
+    <div class="tab" data-tab="quality">Value &amp; Quality</div>
+  </div>
+
+  <!-- ============================ OVERVIEW ============================ -->
+  <section class="panel active" id="panel-overview">
+    <div class="section-bar">
+      <h2>Team at a glance</h2>
+      <div class="seg" data-window-toggle><button data-w="7" class="on" title="Rolling window: the last 7 × 24 hours up to now">Rolling 7 days</button><button data-w="90" title="Rolling window: the last 90 × 24 hours up to now">Rolling 90 days</button></div>
+    </div>
+    <div class="kpis" id="ov-kpis"></div>
+    <div class="grid">
+      <div class="card"><h3>Daily inferences &amp; active users</h3><div class="hint">Model responses per day and distinct users with activity (selected range &amp; filters).</div><div class="chart-box"><canvas id="ov-daily"></canvas></div></div>
+      <div class="card"><h3>Daily tokens</h3><div class="hint">Total tokens logged per day (selected range &amp; filters).</div><div class="chart-box"><canvas id="ov-tokens"></canvas></div></div>
+      <div class="card wide">
+        <h3>Users</h3><div class="hint">One row per developer for the selected window. Click a column to sort, a row to filter every tab to that user.</div>
+        <div class="table-wrap"><table id="ov-users"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ADOPTION ============================ -->
+  <section class="panel" id="panel-adoption">
+    <div class="section-bar"><h2>Adoption &amp; Enablement</h2><span class="note">Selected range &amp; filters</span></div>
+    <div class="kpis" id="ad-kpis"></div>
+    <div class="grid">
+      <div class="card"><h3>Daily active users</h3><div class="hint">Distinct users with at least one model response per day.</div><div class="chart-box"><canvas id="ad-dau"></canvas></div></div>
+      <div class="card"><h3>Surface mix</h3><div class="hint">Daily inferences by client (Hub / CLI / IDE).</div><div class="chart-box"><canvas id="ad-surface"></canvas></div></div>
+      <div class="card"><h3>Daily sessions</h3><div class="hint">Distinct sessions (trajectories) per day — exact for the current user / client / model filters. Inferences per session (excluding background calls) as a line.</div><div class="chart-box"><canvas id="ad-sessions"></canvas></div></div>
+      <div class="card"><h3>Inferences per active user</h3><div class="hint">Daily inferences ÷ daily active users.</div><div class="chart-box"><canvas id="ad-intensity"></canvas></div></div>
+      <div class="card"><h3>Client versions</h3><div class="hint">Inferences by client version over the selected range (upgrade tracking).</div><div class="chart-box"><canvas id="ad-versions"></canvas></div></div>
+    </div>
+  </section>
+
+  <!-- ============================ FLEET & MODELS ============================ -->
+  <section class="panel" id="panel-fleet">
+    <div class="section-bar">
+      <h2>Fleet &amp; Models</h2>
+      <div class="seg" data-window-toggle><button data-w="7" class="on" title="Rolling window: the last 7 × 24 hours up to now">Rolling 7 days</button><button data-w="90" title="Rolling window: the last 90 × 24 hours up to now">Rolling 90 days</button></div>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>Inference share by model</h3><div class="hint">Selected window (exact).</div><div class="chart-box"><canvas id="fl-share"></canvas></div></div>
+      <div class="card"><h3>Daily inferences by model</h3><div class="hint">Selected range &amp; filters.</div><div class="chart-box"><canvas id="fl-daily"></canvas></div></div>
+      <div class="card"><h3>Reasoning tier (experience)</h3><div class="hint">Inferences by experience (model + reasoning tier), selected range &amp; filters.</div><div class="chart-box"><canvas id="fl-experience"></canvas></div></div>
+      <div class="card"><h3>Model × client</h3><div class="hint">Inferences per model by client, selected range &amp; filters.</div><div class="chart-box"><canvas id="fl-client"></canvas></div></div>
+      <div class="card wide">
+        <h3>Models</h3><div class="hint">One row per model for the selected window. Users and sessions are exact per window. Click a row to filter by model.</div>
+        <div class="table-wrap"><table id="fl-models"></table></div>
+        <div class="note">Sessions = distinct trajectory ids. <strong>Flash-lite models (e.g. gemini-3.5-flash-lite) are Antigravity background calls</strong>: they run without a session id, so they show 0 sessions.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ TOKENS ============================ -->
+  <section class="panel" id="panel-tokens">
+    <div class="section-bar"><h2>Usage &amp; Tokens</h2><span class="note">Selected range &amp; filters · token counts as logged (no cost estimates)</span></div>
+    <div class="kpis" id="tk-kpis"></div>
+    <div class="grid">
+      <div class="card wide"><h3>Daily tokens by type</h3><div class="hint">Prompt, output (candidates) and thinking tokens as bars; total and cached as lines. Types are shown as logged — they are not assumed to add up to the total.</div><div class="chart-box"><canvas id="tk-daily"></canvas></div></div>
+      <div class="card"><h3>Tokens by model</h3><div class="hint">By type, selected range &amp; filters.</div><div class="chart-box"><canvas id="tk-model"></canvas></div></div>
+      <div class="card"><h3>Tokens by experience</h3><div class="hint">Total tokens per reasoning tier.</div><div class="chart-box"><canvas id="tk-experience"></canvas></div></div>
+      <div class="card"><h3>Tokens per inference</h3><div class="hint">Daily total tokens ÷ daily inferences.</div><div class="chart-box"><canvas id="tk-per-inf"></canvas></div></div>
+      <div class="card"><h3>Largest single inference by model</h3><div class="hint">Max tokens in one response, selected range &amp; filters.</div><div class="chart-box"><canvas id="tk-max"></canvas></div></div>
+    </div>
+  </section>
+
+  <!-- ============================ VALUE & QUALITY ============================ -->
+  <section class="panel" id="panel-quality">
+    <div class="section-bar"><h2>Value &amp; Quality</h2><span class="note">Human-in-the-loop permission decisions · selected range, user &amp; client filters (permission events carry no model label, so the model filter does not apply to the permission charts; it does apply to code citations)</span></div>
+    <div class="kpis" id="vq-kpis"></div>
+    <div class="grid">
+      <div class="card"><h3>Permission decisions per day</h3><div class="hint">Accepted vs rejected tool / command permission prompts.</div><div class="chart-box"><canvas id="vq-daily"></canvas></div></div>
+      <div class="card"><h3>Grant rate by user</h3><div class="hint">Accepted ÷ permission requests.</div><div class="chart-box"><canvas id="vq-user"></canvas></div></div>
+      <div class="card"><h3>Grant rate by client</h3><div class="hint">Accepted ÷ permission requests.</div><div class="chart-box"><canvas id="vq-model"></canvas></div></div>
+      <div class="card"><h3>Finished turns per day</h3><div class="hint">'InferenceResolved' events — a turn finished (activity signal, not a success signal).</div><div class="chart-box"><canvas id="vq-turns"></canvas></div></div>
+      <div class="card wide">
+        <h3>Code citations</h3><div class="hint">Model responses that closely matched public source code: the cited source and its license, never the matched text. Selected range &amp; filters (the model filter applies here). Latest 200 shown.</div>
+        <div class="table-wrap"><table id="vq-citations"></table></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+'use strict';
+// ----------------------------------------------------------------------------
+// State
+// ----------------------------------------------------------------------------
+let DATA = null;
+const charts = {};
+const state = { tab: 'overview', range: 30, user: '', client: '', model: '', windowDays: 7,
+  userSort: { key: 'total_tokens', dir: -1 }, modelSort: { key: 'inferences', dir: -1 } };
+const PALETTE = ['#1A73E8', '#1E8E3E', '#E37400', '#8430CE', '#D93025', '#12B5CB', '#F538A0', '#5F6368', '#9334E6', '#188038'];
+
+// ----------------------------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------------------------
+const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+const fmt = v => num(v).toLocaleString();
+const fmtCompact = v => Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(num(v));
+const pct = v => (v === null || v === undefined || v === '' || !Number.isFinite(parseFloat(v))) ? '—' : (parseFloat(v) * 100).toFixed(1) + '%';
+const ratio = (a, b) => b > 0 ? a / b : null;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uniq = arr => [...new Set(arr)].filter(v => v !== null && v !== undefined && v !== '').sort();
+const sumBy = (rows, key) => rows.reduce((s, r) => s + num(r[key]), 0);
+const groupSum = (rows, keyFn, valKey) => { const m = {}; rows.forEach(r => { const k = keyFn(r); m[k] = (m[k] || 0) + num(r[valKey]); }); return m; };
+const COLOR_MAP = {};
+function colorFor(kind, key) { const k = kind + ':' + key; if (!(k in COLOR_MAP)) COLOR_MAP[k] = PALETTE[Object.keys(COLOR_MAP).filter(x => x.startsWith(kind + ':')).length % PALETTE.length]; return COLOR_MAP[k]; }
+const modelColor = m => colorFor('model', m), clientColor = c => colorFor('client', c);
+const fmtTime = t => t ? String(t).replace(' UTC', '').slice(0, 16) : '—';
+
+function todayUTC() { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); }
+function dateList(days) {
+  const out = []; const end = todayUTC();
+  for (let i = days - 1; i >= 0; i--) { const d = new Date(end); d.setUTCDate(d.getUTCDate() - i); out.push(d.toISOString().slice(0, 10)); }
+  return out;
+}
+
+// Filter a daily view by range + global filters (only filters on columns the view has)
+function filtered(rows, opts = {}) {
+  const dates = new Set(dateList(state.range));
+  return (rows || []).filter(r =>
+    dates.has(r.event_date) &&
+    (!state.user || r.user_email === state.user) &&
+    (!state.client || r.client_name === state.client) &&
+    (opts.ignoreModel || !state.model || r.model === state.model));
+}
+
+function destroy(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+function setEmpty(id, empty) {
+  const canvas = document.getElementById(id); const box = canvas.parentElement;
+  let msg = box.querySelector('.empty');
+  if (empty) { canvas.style.display = 'none'; if (!msg) { msg = document.createElement('div'); msg.className = 'empty'; msg.textContent = 'No data for the current selection.'; box.appendChild(msg); } }
+  else { canvas.style.display = ''; if (msg) msg.remove(); }
+}
+function chart(id, config, isEmpty) {
+  destroy(id); setEmpty(id, isEmpty); if (isEmpty) return;
+  config.options = Object.assign({ responsive: true, maintainAspectRatio: false, animation: false,
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }, config.options || {});
+  charts[id] = new Chart(document.getElementById(id), config);
+}
+const dayLabels = () => dateList(state.range).map(d => d.slice(5));
+
+function kpiCards(elId, items) {
+  document.getElementById(elId).innerHTML = items.map(k =>
+    `<div class="kpi"><div class="label">${esc(k.label)}</div><div class="value">${esc(k.value)}</div><div class="sub">${esc(k.sub || '')}</div></div>`).join('');
+}
+
+// ----------------------------------------------------------------------------
+// Summary row selection (exact window metrics)
+// ----------------------------------------------------------------------------
+function summaryRow() {
+  const w = String(state.windowDays);
+  if (state.user) return { row: (DATA.user_summary || []).find(r => String(r.window_days) === w && r.scope === 'user' && r.user_email === state.user), scope: 'user ' + state.user };
+  if (state.model) return { row: (DATA.model_summary || []).find(r => String(r.window_days) === w && r.scope === 'model' && r.model === state.model), scope: 'model ' + state.model };
+  return { row: (DATA.user_summary || []).find(r => String(r.window_days) === w && r.scope === 'all_users'), scope: 'all users' };
+}
+
+// ----------------------------------------------------------------------------
+// Tabs
+// ----------------------------------------------------------------------------
+function renderOverview() {
+  const { row, scope } = summaryRow(); const r = row || {};
+  const sub = `Rolling ${state.windowDays} days (${state.windowDays} × 24 h) · ${scope}` + (state.client ? ' · client filter not applied' : '');
+  kpiCards('ov-kpis', [
+    { label: 'Active users', value: fmt(r.active_users), sub },
+    { label: 'Inferences', value: fmt(r.inferences), sub },
+    { label: 'Sessions', value: fmt(r.trajectories), sub },
+    { label: 'Total tokens', value: fmtCompact(r.total_tokens), sub },
+    state.model && !state.user
+      ? { label: 'Permission grant rate', value: '—', sub: 'Permission events carry no model label' }
+      : { label: 'Permission grant rate', value: pct(r.permission_grant_rate), sub: `${fmt(r.permission_grants_accepted)} accepted / ${fmt(r.permission_requests_total)} requests` },
+  ]);
+
+  const ad = filtered(DATA.adoption); const te = filtered(DATA.token_economics); const days = dateList(state.range);
+  const infByDay = groupSum(ad, x => x.event_date, 'total_inferences');
+  const usersByDay = {}; ad.forEach(x => { (usersByDay[x.event_date] = usersByDay[x.event_date] || new Set()).add(x.user_email); });
+  chart('ov-daily', { type: 'bar', data: { labels: dayLabels(), datasets: [
+      { type: 'bar', label: 'Inferences', data: days.map(d => infByDay[d] || 0), backgroundColor: PALETTE[0], yAxisID: 'y' },
+      { type: 'line', label: 'Active users', data: days.map(d => usersByDay[d] ? usersByDay[d].size : 0), borderColor: PALETTE[1], backgroundColor: PALETTE[1], yAxisID: 'y1' } ] },
+    options: { scales: { y: { beginAtZero: true, title: { display: true, text: 'Inferences' } }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { precision: 0 }, title: { display: true, text: 'Users' } } } } }, ad.length === 0);
+  const tokByDay = groupSum(te, x => x.event_date, 'total_tokens');
+  chart('ov-tokens', { type: 'bar', data: { labels: dayLabels(), datasets: [{ label: 'Total tokens', data: days.map(d => tokByDay[d] || 0), backgroundColor: PALETTE[3] }] },
+    options: { scales: { y: { beginAtZero: true, ticks: { callback: v => fmtCompact(v) } } } } }, te.length === 0);
+
+  renderUserTable();
+}
+
+const USER_COLS = [
+  ['user_email', 'User', false], ['inferences', 'Inferences', true], ['trajectories', 'Sessions', true], ['active_days', 'Active days', true],
+  ['inferences_per_trajectory', 'Inf / session', true], ['total_tokens', 'Total tokens', true], ['prompt_tokens', 'Prompt', true],
+  ['candidates_tokens', 'Output', true], ['thoughts_tokens', 'Thinking', true], ['cached_content_tokens', 'Cached', true],
+  ['token_share', 'Token share', true], ['top_model', 'Top model', false], ['clients', 'Clients', false],
+  ['permission_grant_rate', 'Grant rate', true], ['last_seen', 'Last seen (UTC)', false]];
+function renderUserTable() {
+  const w = String(state.windowDays);
+  const rows = (DATA.user_summary || []).filter(r => String(r.window_days) === w && r.scope === 'user');
+  const { key, dir } = state.userSort; const isNum = (USER_COLS.find(c => c[0] === key) || [])[2];
+  rows.sort((a, b) => isNum ? dir * (num(a[key]) - num(b[key])) : dir * String(a[key] ?? '').localeCompare(String(b[key] ?? '')));
+  const cell = (c, r) => {
+    const v = r[c[0]];
+    if (c[0] === 'token_share' || c[0] === 'permission_grant_rate') return pct(v);
+    if (c[0] === 'last_seen') return esc(fmtTime(v));
+    if (c[0] === 'inferences_per_trajectory') return v === null || v === undefined ? '—' : esc(v);
+    return c[2] ? fmt(v) : esc(v ?? '—');
+  };
+  const t = document.getElementById('ov-users');
+  t.innerHTML = `<thead><tr>${USER_COLS.map(c => `<th class="${c[2] ? 'num' : ''}" data-key="${c[0]}">${esc(c[1])}${key === c[0] ? (dir < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('')}</tr></thead>` +
+    `<tbody>${rows.length ? rows.map(r => `<tr data-user="${esc(r.user_email)}" class="${r.user_email === state.user ? 'selected' : ''}">${USER_COLS.map(c => `<td class="${c[2] ? 'num' : ''}">${cell(c, r)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${USER_COLS.length}" class="empty">No users in this window.</td></tr>`}</tbody>`;
+  t.querySelectorAll('th').forEach(th => th.onclick = () => { const k = th.dataset.key; state.userSort = { key: k, dir: state.userSort.key === k ? -state.userSort.dir : -1 }; renderUserTable(); });
+  t.querySelectorAll('tbody tr[data-user]').forEach(tr => tr.onclick = () => setFilter('user', tr.dataset.user === state.user ? '' : tr.dataset.user));
+}
+
+function renderAdoption() {
+  const ad = filtered(DATA.adoption); const days = dateList(state.range);
+  const usersByDay = {}; ad.forEach(x => { (usersByDay[x.event_date] = usersByDay[x.event_date] || new Set()).add(x.user_email); });
+  const infByDay = groupSum(ad, x => x.event_date, 'total_inferences');
+  const allUsers = new Set(ad.map(x => x.user_email));
+  const activeDays = days.filter(d => usersByDay[d]).length;
+  kpiCards('ad-kpis', [
+    { label: 'Users with activity', value: fmt(allUsers.size), sub: `Last ${state.range} days` },
+    { label: 'Peak daily active users', value: fmt(Math.max(0, ...days.map(d => usersByDay[d] ? usersByDay[d].size : 0))), sub: `Last ${state.range} days` },
+    { label: 'Days with activity', value: fmt(activeDays), sub: `of ${state.range} days` },
+    { label: 'Inferences', value: fmt(sumBy(ad, 'total_inferences')), sub: `Last ${state.range} days` },
+    { label: 'Clients in use', value: fmt(uniq(ad.map(x => x.client_name)).length), sub: uniq(ad.map(x => x.client_name)).join(', ') || '—' },
+  ]);
+  chart('ad-dau', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Active users', data: days.map(d => usersByDay[d] ? usersByDay[d].size : 0), borderColor: PALETTE[1], backgroundColor: PALETTE[1] }] },
+    options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }, ad.length === 0);
+  const clients = uniq(ad.map(x => x.client_name));
+  chart('ad-surface', { type: 'bar', data: { labels: dayLabels(), datasets: clients.map((c, i) => {
+      const m = groupSum(ad.filter(x => x.client_name === c), x => x.event_date, 'total_inferences');
+      return { label: c, data: days.map(d => m[d] || 0), backgroundColor: clientColor(c) }; }) },
+    options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } }, ad.length === 0);
+  // Exact daily sessions: pick the pre-aggregated row matching the active filters ('(all)' = not filtered)
+  const want = { u: state.user || '(all)', c: state.client || '(all)', m: state.model || '(all)' };
+  const rangeDays = new Set(days);
+  const ds = (DATA.daily_sessions || []).filter(x => rangeDays.has(x.event_date) && x.user_email === want.u && x.client_name === want.c && x.model === want.m);
+  const sessByDay = {}, dsInf = {}; ds.forEach(x => { sessByDay[x.event_date] = num(x.sessions); dsInf[x.event_date] = num(x.session_inferences); });
+  chart('ad-sessions', { type: 'bar', data: { labels: dayLabels(), datasets: [
+      { type: 'bar', label: 'Sessions', data: days.map(d => sessByDay[d] || 0), backgroundColor: PALETTE[5], yAxisID: 'y' },
+      { type: 'line', label: 'Inferences per session', data: days.map(d => sessByDay[d] ? +(dsInf[d] / sessByDay[d]).toFixed(1) : null), borderColor: PALETTE[2], backgroundColor: PALETTE[2], yAxisID: 'y1', spanGaps: false } ] },
+    options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'Sessions' } }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Inf / session' } } } } }, ds.length === 0);
+  chart('ad-intensity', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Inferences per active user', data: days.map(d => usersByDay[d] ? +(infByDay[d] / usersByDay[d].size).toFixed(1) : null), borderColor: PALETTE[0], backgroundColor: PALETTE[0], spanGaps: false }] },
+    options: { scales: { y: { beginAtZero: true } } } }, ad.length === 0);
+  const ver = groupSum(ad, x => `${x.client_name} ${x.client_version}`, 'total_inferences'); const vk = Object.keys(ver).sort();
+  document.getElementById('ad-versions').parentElement.style.height = Math.max(280, 22 * vk.length + 60) + 'px';
+  chart('ad-versions', { type: 'bar', data: { labels: vk, datasets: [{ label: 'Inferences', data: vk.map(k => ver[k]), backgroundColor: PALETTE[2] }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true }, y: { ticks: { autoSkip: false, font: { size: 11 } } } } } }, vk.length === 0);
+}
+
+const MODEL_COLS = [
+  ['model', 'Model', false], ['active_users', 'Users', true], ['inferences', 'Inferences', true], ['inference_share', 'Inference share', true],
+  ['trajectories', 'Sessions', true], ['total_tokens', 'Total tokens', true], ['token_share', 'Token share', true],
+  ['avg_tokens_per_inference', 'Avg tokens / inf', true], ['max_tokens_per_inference', 'Max tokens / inf', true],
+  ['experiences', 'Experiences', false], ['clients', 'Clients', false]];
+function renderFleet() {
+  const w = String(state.windowDays);
+  const ms = (DATA.model_summary || []).filter(r => String(r.window_days) === w && r.scope === 'model');
+  chart('fl-share', { type: 'doughnut', data: { labels: ms.map(r => r.model), datasets: [{ data: ms.map(r => num(r.inferences)), backgroundColor: ms.map(r => modelColor(r.model)) }] },
+    options: { plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: c => `${c.label}: ${fmt(c.raw)} (${pct(ms[c.dataIndex].inference_share)})` } } } } }, ms.length === 0);
+
+  const ad = filtered(DATA.adoption); const te = filtered(DATA.token_economics); const days = dateList(state.range);
+  const models = uniq(ad.map(x => x.model));
+  chart('fl-daily', { type: 'bar', data: { labels: dayLabels(), datasets: models.map((m, i) => {
+      const g = groupSum(ad.filter(x => x.model === m), x => x.event_date, 'total_inferences');
+      return { label: m, data: days.map(d => g[d] || 0), backgroundColor: modelColor(m) }; }) },
+    options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } }, ad.length === 0);
+  const ex = groupSum(te, x => x.experience, 'total_inferences'); const ek = Object.keys(ex).sort((a, b) => ex[b] - ex[a]);
+  chart('fl-experience', { type: 'bar', data: { labels: ek, datasets: [{ label: 'Inferences', data: ek.map(k => ex[k]), backgroundColor: PALETTE[3] }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } } }, ek.length === 0);
+  const clients = uniq(ad.map(x => x.client_name));
+  chart('fl-client', { type: 'bar', data: { labels: models, datasets: clients.map((c, i) => {
+      const g = groupSum(ad.filter(x => x.client_name === c), x => x.model, 'total_inferences');
+      return { label: c, data: models.map(m => g[m] || 0), backgroundColor: clientColor(c) }; }) },
+    options: { scales: { y: { beginAtZero: true } } } }, ad.length === 0);
+
+  const { key, dir } = state.modelSort; const isNum = (MODEL_COLS.find(c => c[0] === key) || [])[2];
+  ms.sort((a, b) => isNum ? dir * (num(a[key]) - num(b[key])) : dir * String(a[key] ?? '').localeCompare(String(b[key] ?? '')));
+  const cell = (c, r) => {
+    const v = r[c[0]];
+    if (['inference_share', 'token_share'].includes(c[0])) return pct(v);
+    if (c[0] === 'avg_tokens_per_inference') return v === null || v === undefined ? '—' : fmt(Math.round(num(v)));
+    return c[2] ? fmt(v) : esc(v ?? '—');
+  };
+  const t = document.getElementById('fl-models');
+  t.innerHTML = `<thead><tr>${MODEL_COLS.map(c => `<th class="${c[2] ? 'num' : ''}" data-key="${c[0]}">${esc(c[1])}${key === c[0] ? (dir < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('')}</tr></thead>` +
+    `<tbody>${ms.length ? ms.map(r => `<tr data-model="${esc(r.model)}" class="${r.model === state.model ? 'selected' : ''}">${MODEL_COLS.map(c => `<td class="${c[2] ? 'num' : ''}">${cell(c, r)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${MODEL_COLS.length}" class="empty">No models in this window.</td></tr>`}</tbody>`;
+  t.querySelectorAll('th').forEach(th => th.onclick = () => { const k = th.dataset.key; state.modelSort = { key: k, dir: state.modelSort.key === k ? -state.modelSort.dir : -1 }; renderFleet(); });
+  t.querySelectorAll('tbody tr[data-model]').forEach(tr => tr.onclick = () => setFilter('model', tr.dataset.model === state.model ? '' : tr.dataset.model));
+}
+
+function renderTokens() {
+  const te = filtered(DATA.token_economics); const days = dateList(state.range);
+  const inf = sumBy(te, 'total_inferences');
+  kpiCards('tk-kpis', [
+    { label: 'Total tokens', value: fmtCompact(sumBy(te, 'total_tokens')), sub: `Last ${state.range} days` },
+    { label: 'Prompt tokens', value: fmtCompact(sumBy(te, 'prompt_tokens')) },
+    { label: 'Output tokens', value: fmtCompact(sumBy(te, 'candidates_tokens')) },
+    { label: 'Thinking tokens', value: fmtCompact(sumBy(te, 'thoughts_tokens')) },
+    { label: 'Cached tokens', value: fmtCompact(sumBy(te, 'cached_content_tokens')) },
+    { label: 'Tokens per inference', value: inf ? fmt(Math.round(sumBy(te, 'total_tokens') / inf)) : '—', sub: `${fmt(inf)} inferences` },
+  ]);
+  const by = k => groupSum(te, x => x.event_date, k);
+  const P = by('prompt_tokens'), C = by('candidates_tokens'), T = by('thoughts_tokens'), TOT = by('total_tokens'), CA = by('cached_content_tokens'), I = by('total_inferences');
+  chart('tk-daily', { type: 'bar', data: { labels: dayLabels(), datasets: [
+      { label: 'Prompt', data: days.map(d => P[d] || 0), backgroundColor: PALETTE[0], stack: 'types' },
+      { label: 'Output', data: days.map(d => C[d] || 0), backgroundColor: PALETTE[1], stack: 'types' },
+      { label: 'Thinking', data: days.map(d => T[d] || 0), backgroundColor: PALETTE[3], stack: 'types' },
+      { type: 'line', label: 'Total', data: days.map(d => TOT[d] || 0), borderColor: '#0F172A', backgroundColor: '#0F172A' },
+      { type: 'line', label: 'Cached', data: days.map(d => CA[d] || 0), borderColor: PALETTE[2], backgroundColor: PALETTE[2], borderDash: [5, 4] } ] },
+    options: { scales: { x: { stacked: true }, y: { stacked: false, beginAtZero: true, ticks: { callback: v => fmtCompact(v) } } } } }, te.length === 0);
+  const models = uniq(te.map(x => x.model)); const g = k => groupSum(te, x => x.model, k);
+  const mp = g('prompt_tokens'), mc = g('candidates_tokens'), mt = g('thoughts_tokens');
+  chart('tk-model', { type: 'bar', data: { labels: models, datasets: [
+      { label: 'Prompt', data: models.map(m => mp[m] || 0), backgroundColor: PALETTE[0] },
+      { label: 'Output', data: models.map(m => mc[m] || 0), backgroundColor: PALETTE[1] },
+      { label: 'Thinking', data: models.map(m => mt[m] || 0), backgroundColor: PALETTE[3] } ] },
+    options: { indexAxis: 'y', scales: { x: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtCompact(v) } }, y: { stacked: true } } } }, te.length === 0);
+  const ex = groupSum(te, x => x.experience, 'total_tokens'); const ek = Object.keys(ex).sort((a, b) => ex[b] - ex[a]);
+  chart('tk-experience', { type: 'bar', data: { labels: ek, datasets: [{ label: 'Total tokens', data: ek.map(k => ex[k]), backgroundColor: PALETTE[3] }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { callback: v => fmtCompact(v) } } } } }, ek.length === 0);
+  chart('tk-per-inf', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Tokens per inference', data: days.map(d => I[d] ? Math.round((TOT[d] || 0) / I[d]) : null), borderColor: PALETTE[0], backgroundColor: PALETTE[0], spanGaps: false }] },
+    options: { scales: { y: { beginAtZero: true, ticks: { callback: v => fmtCompact(v) } } } } }, te.length === 0);
+  const mx = {}; te.forEach(x => { if (x.max_tokens_per_inference !== null && x.max_tokens_per_inference !== undefined) mx[x.model] = Math.max(mx[x.model] || 0, num(x.max_tokens_per_inference)); });
+  const mk = Object.keys(mx).sort((a, b) => mx[b] - mx[a]);
+  chart('tk-max', { type: 'bar', data: { labels: mk, datasets: [{ label: 'Max tokens in one inference', data: mk.map(k => mx[k]), backgroundColor: PALETTE[2] }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { callback: v => fmtCompact(v) } } } } }, mk.length === 0);
+}
+
+function renderQuality() {
+  // Permission / client events carry no model label, so the model filter is not applied here.
+  const tq = filtered(DATA.trust_quality, { ignoreModel: true }); const days = dateList(state.range);
+  const cz = filtered(DATA.code_citations);
+  const req = sumBy(tq, 'permission_requests_total'), acc = sumBy(tq, 'permission_grants_accepted'), rej = sumBy(tq, 'permission_grants_rejected');
+  kpiCards('vq-kpis', [
+    { label: 'Permission requests', value: fmt(req), sub: `Last ${state.range} days` },
+    { label: 'Accepted', value: fmt(acc) },
+    { label: 'Rejected', value: fmt(rej) },
+    { label: 'Grant rate', value: pct(ratio(acc, req)) },
+    { label: 'Finished turns', value: fmt(sumBy(tq, 'inference_resolved_events')), sub: 'InferenceResolved events' },
+    { label: 'Code citations', value: fmt(cz.length), sub: `${uniq(cz.map(c => c.url)).length} public source(s)` },
+  ]);
+  renderCitations(cz);
+  const A = groupSum(tq, x => x.event_date, 'permission_grants_accepted'), R = groupSum(tq, x => x.event_date, 'permission_grants_rejected');
+  chart('vq-daily', { type: 'bar', data: { labels: dayLabels(), datasets: [
+      { label: 'Accepted', data: days.map(d => A[d] || 0), backgroundColor: PALETTE[1] },
+      { label: 'Rejected', data: days.map(d => R[d] || 0), backgroundColor: PALETTE[4] } ] },
+    options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } } }, req === 0);
+  const rateBy = keyFn => { const q = groupSum(tq, keyFn, 'permission_requests_total'), a = groupSum(tq, keyFn, 'permission_grants_accepted');
+    const ks = Object.keys(q).filter(k => q[k] > 0).sort((x, y) => q[y] - q[x]); return { ks, vals: ks.map(k => +(100 * a[k] / q[k]).toFixed(1)), q }; };
+  const u = rateBy(x => x.user_email);
+  chart('vq-user', { type: 'bar', data: { labels: u.ks, datasets: [{ label: 'Grant rate %', data: u.vals, backgroundColor: PALETTE[0] }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.raw}% of ${fmt(u.q[c.label])} requests` } } }, scales: { x: { min: 0, max: 100 } } } }, u.ks.length === 0);
+  const m = rateBy(x => x.client_name);
+  chart('vq-model', { type: 'bar', data: { labels: m.ks, datasets: [{ label: 'Grant rate %', data: m.vals, backgroundColor: PALETTE[3] }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.raw}% of ${fmt(m.q[c.label])} requests` } } }, scales: { x: { min: 0, max: 100 } } } }, m.ks.length === 0);
+  const T = groupSum(tq, x => x.event_date, 'inference_resolved_events');
+  chart('vq-turns', { type: 'line', data: { labels: dayLabels(), datasets: [{ label: 'Finished turns', data: days.map(d => T[d] || 0), borderColor: PALETTE[5], backgroundColor: PALETTE[5] }] },
+    options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }, tq.length === 0);
+}
+
+function renderCitations(rows) {
+  const t = document.getElementById('vq-citations');
+  const sorted = [...rows].sort((a, b) => String(b.event_timestamp).localeCompare(String(a.event_timestamp))).slice(0, 200);
+  const link = u => /^https?:\/\//.test(u || '') ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>` : esc(u ?? '—');
+  t.innerHTML = `<thead><tr><th>Time (UTC)</th><th>User</th><th>Client</th><th>Model</th><th>Source</th><th>License</th><th class="num">Matched chars</th></tr></thead>` +
+    `<tbody>${sorted.length ? sorted.map(r => `<tr><td>${esc(fmtTime(r.event_timestamp))}</td><td>${esc(r.user_email)}</td><td>${esc(r.client_name)}</td><td>${esc(r.model)}</td><td>${link(r.url)}</td><td>${esc(r.license)}</td><td class="num">${fmt(r.matched_chars)}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="empty">No code citations in the current selection.</td></tr>'}</tbody>`;
+}
+
+// ----------------------------------------------------------------------------
+// Filters, tabs, data loading
+// ----------------------------------------------------------------------------
+function fillSelect(id, values, label) {
+  const sel = document.getElementById(id); const cur = sel.value;
+  sel.innerHTML = `<option value="">${esc(label)}</option>` + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  sel.value = values.includes(cur) ? cur : '';
+}
+function setFilter(kind, value) { state[kind] = value; document.getElementById('f-' + kind).value = value; render(); }
+function renderBanner() {
+  const parts = []; if (state.user) parts.push(`user ${state.user}`); if (state.client) parts.push(`client ${state.client}`); if (state.model) parts.push(`model ${state.model}`);
+  const b = document.getElementById('filter-banner'); b.style.display = parts.length ? 'block' : 'none';
+  document.getElementById('filter-text').textContent = parts.length ? 'Filtered by ' + parts.join(' · ') : '';
+}
+function render() {
+  if (!DATA) return;
+  renderBanner();
+  document.querySelectorAll('[data-window-toggle] button').forEach(b => b.classList.toggle('on', +b.dataset.w === state.windowDays));
+  ({ overview: renderOverview, adoption: renderAdoption, fleet: renderFleet, tokens: renderTokens, quality: renderQuality })[state.tab]();
+}
+function setData(data) {
+  DATA = data;
+  const m = data.metadata || {};
+  document.getElementById('meta-source').textContent = `${m.project_id || '?'}:${m.dataset_id || '?'}`;
+  document.getElementById('meta-synced').textContent = m.fetched_at ? new Date(m.fetched_at).toLocaleString() : '--';
+  const allDates = uniq([...(data.adoption || []), ...(data.trust_quality || [])].map(r => r.event_date));
+  document.getElementById('meta-through').textContent = allDates.length ? allDates[allDates.length - 1] : '--';
+  const all = [...(data.adoption || []), ...(data.token_economics || []), ...(data.trust_quality || [])];
+  fillSelect('f-user', uniq([...all.map(r => r.user_email), ...(data.user_summary || []).map(r => r.user_email)]), 'All users');
+  fillSelect('f-client', uniq(all.map(r => r.client_name)), 'All clients');
+  // Models come from model responses only: client events carry no model or placeholder labels.
+  const models = uniq([...(data.adoption || []), ...(data.token_economics || []), ...(data.model_summary || [])].map(r => r.model));
+  models.forEach(modelColor); uniq(all.map(r => r.client_name)).forEach(clientColor); // stable colors in sorted order
+  fillSelect('f-model', models, 'All models');
+  state.user = document.getElementById('f-user').value; state.client = document.getElementById('f-client').value; state.model = document.getElementById('f-model').value;
+  render();
+}
+function showError(msg) { const e = document.getElementById('error-box'); e.textContent = msg; e.style.display = msg ? 'block' : 'none'; }
+async function loadData() {
+  try { const res = await fetch('/api/data'); const d = await res.json(); if (!res.ok) throw new Error(d.error || res.statusText); showError(''); setData(d); }
+  catch (e) { showError('Could not load telemetry data: ' + e.message); }
+}
+async function refresh() {
+  const btn = document.getElementById('btn-refresh'); btn.disabled = true; btn.textContent = '↻ Refreshing…';
+  try { const res = await fetch('/api/refresh', { method: 'POST', headers: { 'X-Requested-With': 'dashboard' } }); const d = await res.json(); if (!res.ok) throw new Error(d.details || d.error || res.statusText); showError(''); setData(d); }
+  catch (e) { showError('Refresh failed: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '↻ Refresh'; }
+}
+
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + t.dataset.tab));
+  state.tab = t.dataset.tab; render();
+});
+document.querySelectorAll('[data-window-toggle] button').forEach(b => b.onclick = () => { state.windowDays = +b.dataset.w; render(); });
+document.getElementById('f-range').onchange = e => { state.range = +e.target.value; render(); };
+['user', 'client', 'model'].forEach(k => document.getElementById('f-' + k).onchange = e => { state[k] = e.target.value; render(); });
+document.getElementById('filter-clear').onclick = () => { ['user', 'client', 'model'].forEach(k => { state[k] = ''; document.getElementById('f-' + k).value = ''; }); render(); };
+document.getElementById('btn-refresh').onclick = refresh;
+loadData();
+</script>
 </body>
 </html>
